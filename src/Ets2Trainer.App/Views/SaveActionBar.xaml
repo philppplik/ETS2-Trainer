@@ -1,0 +1,54 @@
+<UserControl x:Class="Ets2Trainer.App.Views.SaveActionBar"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- DataContext: SaveEditorViewModel -->
+    <Border CornerRadius="12" Padding="18,12" BorderThickness="1">
+        <Border.Style>
+            <Style TargetType="Border">
+                <Setter Property="Background" Value="{StaticResource Bg1}" />
+                <Setter Property="BorderBrush" Value="{StaticResource Line}" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsDirty}" Value="True">
+                        <Setter Property="BorderBrush" Value="{StaticResource Amber}" />
+                        <Setter Property="Background" Value="#1FFFB020" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </Border.Style>
+        <DockPanel>
+            <Button DockPanel.Dock="Right" Style="{StaticResource PrimaryButton}" Command="{Binding SaveCommand}" MinWidth="150">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="&#xE74E;" FontFamily="{StaticResource Icons}" FontSize="14" Margin="0,0,10,0" VerticalAlignment="Center" />
+                    <TextBlock Text="Speichern" />
+                </StackPanel>
+            </Button>
+
+            <Border DockPanel.Dock="Right" Background="{StaticResource Bg0}" CornerRadius="9" Padding="3" Margin="0,0,14,0" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal">
+                    <RadioButton Style="{StaticResource Segment}" GroupName="SaveMode" IsChecked="True" Content="Als neuen Spielstand"
+                                 ToolTip="Empfohlen: Original bleibt unberührt, der neue Stand heißt „[Trainer] …“" />
+                    <RadioButton Style="{StaticResource Segment}" GroupName="SaveMode" IsChecked="{Binding Overwrite}" Content="Überschreiben"
+                                 ToolTip="Überschreibt den geladenen Stand – vorher wird automatisch ein Backup angelegt" />
+                </StackPanel>
+            </Border>
+
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock FontFamily="{StaticResource Display}" FontSize="14" FontWeight="SemiBold">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Text" Value="Keine ungespeicherten Änderungen" />
+                            <Setter Property="Foreground" Value="{StaticResource TextDim}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsDirty}" Value="True">
+                                    <Setter Property="Text" Value="Ungespeicherte Änderungen" />
+                                    <Setter Property="Foreground" Value="{StaticResource Amber}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+                <TextBlock Style="{StaticResource BodyText}" FontSize="12" Text="Tipp: Im Spiel speichern → hier ändern → im Spiel den „[Trainer]“-Stand laden." />
+            </StackPanel>
+        </DockPanel>
+    </Border>
+</UserControl>

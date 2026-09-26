@@ -1,0 +1,15 @@
+<Application x:Class="Ets2Trainer.App.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:infra="clr-namespace:Ets2Trainer.App.Infrastructure"
+             ShutdownMode="OnMainWindowClose">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Themes/Theme.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <infra:BoolToVisibilityConverter x:Key="BoolToVisibility" />
+            <infra:EnumMatchConverter x:Key="EnumMatch" />
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

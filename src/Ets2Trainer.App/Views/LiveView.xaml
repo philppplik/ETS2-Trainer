@@ -1,0 +1,226 @@
+<UserControl x:Class="Ets2Trainer.App.Views.LiveView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- TruckersMP guard -->
+        <Border Grid.Row="0" Margin="0,0,0,14" CornerRadius="10" Padding="16,12" Background="{StaticResource ErrorWash}"
+                BorderBrush="{StaticResource Error}" BorderThickness="1"
+                Visibility="{Binding IsBlocked, Converter={StaticResource BoolToVisibility}}">
+            <TextBlock Style="{StaticResource BodyText}" Foreground="{StaticResource Text}"
+                       Text="TruckersMP wurde erkannt. Alle Live-Funktionen sind gesperrt – der Trainer ist nur für Singleplayer und offizielle SCS-Konvois gedacht." />
+        </Border>
+
+        <!-- Hero: instrument cluster -->
+        <Border Grid.Row="1" CornerRadius="16" Padding="30,24" Background="{StaticResource HeroGlow}" BorderBrush="{StaticResource Line}" BorderThickness="1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="250" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="130" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Style="{StaticResource Eyebrow}" Text="GESCHWINDIGKEIT" />
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Style="{StaticResource Numeric}" Text="{Binding SpeedText}" FontSize="96" Margin="-4,-14,0,-10" />
+                        <TextBlock Text="km/h" FontFamily="{StaticResource DisplayCondensed}" FontSize="18" Foreground="{StaticResource TextDim}"
+                                   VerticalAlignment="Bottom" Margin="10,0,0,14" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                        <Border CornerRadius="8" Background="{StaticResource Bg0}" Padding="12,4" Margin="0,0,10,0">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="GANG" FontFamily="{StaticResource DisplayCondensed}" FontSize="11" FontWeight="Bold"
+                                           Foreground="{StaticResource TextMute}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                <TextBlock Style="{StaticResource Numeric}" Text="{Binding GearText}" FontSize="22" Foreground="{StaticResource Amber}" />
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Text="{Binding RpmText}" FontFamily="{StaticResource Display}" FontSize="13" Foreground="{StaticResource TextDim}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Margin="18,0,28,0" VerticalAlignment="Center">
+                    <TextBlock Style="{StaticResource CardTitle}" Text="{Binding TruckTitle}" FontSize="22" />
+                    <TextBlock Style="{StaticResource BodyText}" Text="{Binding JobText}" Margin="0,2,0,18" />
+
+                    <DockPanel Margin="0,0,0,6">
+                        <TextBlock DockPanel.Dock="Right" Text="{Binding RpmText}" FontFamily="{StaticResource Display}" FontSize="12" Foreground="{StaticResource TextDim}" />
+                        <TextBlock Style="{StaticResource Eyebrow}" Text="DREHZAHL" Margin="0" />
+                    </DockPanel>
+                    <ProgressBar Style="{StaticResource Gauge}" Value="{Binding RpmRatio, Mode=OneWay}" Margin="0,0,0,14" />
+
+                    <DockPanel Margin="0,0,0,6">
+                        <TextBlock DockPanel.Dock="Right" Text="{Binding FuelText}" FontFamily="{StaticResource Display}" FontSize="12" Foreground="{StaticResource TextDim}" />
+                        <TextBlock Style="{StaticResource Eyebrow}" Text="TANK" Margin="0" />
+                    </DockPanel>
+                    <ProgressBar Style="{StaticResource Gauge}" Foreground="{StaticResource Busy}" Value="{Binding FuelRatio, Mode=OneWay}" Margin="0,0,0,14" />
+
+                    <DockPanel Margin="0,0,0,6">
+                        <TextBlock DockPanel.Dock="Right" Text="{Binding DamageText}" FontFamily="{StaticResource Display}" FontSize="12" Foreground="{StaticResource TextDim}" />
+                        <TextBlock Style="{StaticResource Eyebrow}" Text="SCHADEN" Margin="0" />
+                    </DockPanel>
+                    <ProgressBar Style="{StaticResource Gauge}" Foreground="{StaticResource Error}" Value="{Binding DamageRatio, Mode=OneWay}" />
+                </StackPanel>
+
+                <!-- Speed-limit sign -->
+                <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
+                    <Grid Width="108" Height="108">
+                        <Ellipse Fill="#F4F1EA" Stroke="#E0342B" StrokeThickness="11" />
+                        <TextBlock Text="{Binding SpeedLimitText}" FontFamily="{StaticResource Display}" FontWeight="Bold" FontSize="36"
+                                   Foreground="#111111" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Grid>
+                    <TextBlock Style="{StaticResource Eyebrow}" Text="TEMPOLIMIT" HorizontalAlignment="Center" Margin="0,10,0,0" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Feature cards -->
+        <Grid Grid.Row="2" Margin="0,16,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="230" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="16" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <!-- Infinite fuel -->
+            <Border Style="{StaticResource Card}">
+                <DockPanel>
+                    <Grid DockPanel.Dock="Top">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource CardTitle}" Text="Unendlich Sprit" />
+                            <Border Style="{StaticResource Chip}" Tag="{Binding FuelChip.Kind}" Margin="0,8,0,0">
+                                <TextBlock Style="{StaticResource ChipText}" Text="{Binding FuelChip.Text}" />
+                            </Border>
+                        </StackPanel>
+                        <CheckBox Style="{StaticResource Switch}" IsChecked="{Binding InfiniteFuel}" HorizontalAlignment="Right" VerticalAlignment="Top"
+                                  AutomationProperties.Name="Unendlich Sprit" />
+                    </Grid>
+                    <TextBlock Style="{StaticResource BodyText}" Margin="0,12,0,0"
+                               Text="Hält den Tank voll. Beim ersten Einschalten kurz fahren – der Trainer findet die Tankanzeige selbst." />
+                </DockPanel>
+            </Border>
+
+            <!-- No damage -->
+            <Border Grid.Column="2" Style="{StaticResource Card}">
+                <DockPanel>
+                    <Grid DockPanel.Dock="Top">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource CardTitle}" Text="Kein Schaden" />
+                            <Border Style="{StaticResource Chip}" Tag="{Binding WearChip.Kind}" Margin="0,8,0,0">
+                                <TextBlock Style="{StaticResource ChipText}" Text="{Binding WearChip.Text}" />
+                            </Border>
+                        </StackPanel>
+                        <CheckBox Style="{StaticResource Switch}" IsChecked="{Binding NoDamage}" HorizontalAlignment="Right" VerticalAlignment="Top"
+                                  AutomationProperties.Name="Kein Schaden" />
+                    </Grid>
+                    <TextBlock Style="{StaticResource BodyText}" Margin="0,12,0,0"
+                               Text="Friert Motor-, Getriebe-, Kabinen-, Chassis- und Reifenverschleiß ein. Werte werden beim ersten Anstieg erkannt." />
+                </DockPanel>
+            </Border>
+
+            <!-- Quick actions -->
+            <Border Grid.Column="4" Grid.RowSpan="3" Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource Eyebrow}" Text="SOFORT" />
+                    <Button Style="{StaticResource GhostButton}" Command="{Binding RefuelCommand}" Margin="0,4,0,8">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xEC0A;" FontFamily="{StaticResource Icons}" FontSize="15" Margin="0,0,10,0" VerticalAlignment="Center" />
+                            <TextBlock Text="Volltanken" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource GhostButton}" Command="{Binding RepairCommand}" Margin="0,0,0,8">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE90F;" FontFamily="{StaticResource Icons}" FontSize="15" Margin="0,0,10,0" VerticalAlignment="Center" />
+                            <TextBlock Text="Reparieren" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource DangerButton}" Command="{Binding StopCommand}" Margin="0,0,0,8">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE71A;" FontFamily="{StaticResource Icons}" FontSize="15" Margin="0,0,10,0" VerticalAlignment="Center" />
+                            <TextBlock Text="Not-Stopp" />
+                        </StackPanel>
+                    </Button>
+                    <Rectangle Height="1" Fill="{StaticResource Line}" Margin="0,10,0,14" />
+                    <Button Style="{StaticResource ChipButton}" Command="{Binding RecalibrateCommand}" HorizontalAlignment="Left" Content="Neu kalibrieren" />
+                    <TextBlock Style="{StaticResource BodyText}" FontSize="12" Margin="0,8,0,0"
+                               Text="Nach Truckwechsel oder Laden eines Spielstands findet der Trainer die Werte automatisch neu." />
+                </StackPanel>
+            </Border>
+
+            <!-- Performance -->
+            <Border Grid.Row="2" Grid.ColumnSpan="3" Style="{StaticResource Card}">
+                <DockPanel>
+                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,16">
+                        <Border DockPanel.Dock="Right" Style="{StaticResource Chip}" Tag="{Binding BoostChip.Kind}">
+                            <TextBlock Style="{StaticResource ChipText}" Text="{Binding BoostChip.Text}" />
+                        </Border>
+                        <TextBlock Style="{StaticResource CardTitle}" Text="Leistung &amp; Tempo" />
+                    </DockPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="28" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="28" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel>
+                            <DockPanel>
+                                <CheckBox DockPanel.Dock="Right" Style="{StaticResource Switch}" IsChecked="{Binding PowerBoost}" AutomationProperties.Name="Leistungs-Boost" />
+                                <TextBlock Style="{StaticResource Eyebrow}" Text="LEISTUNGS-BOOST" VerticalAlignment="Center" Margin="0" />
+                            </DockPanel>
+                            <TextBlock Style="{StaticResource Numeric}" Text="{Binding PowerFactorText}" FontSize="40" Foreground="{StaticResource Amber}" Margin="0,6,0,0" />
+                            <Slider Minimum="1" Maximum="10" SmallChange="0.1" LargeChange="0.5" Value="{Binding PowerFactor}" Margin="0,4,0,6" />
+                            <TextBlock Style="{StaticResource BodyText}" FontSize="12" Text="Verstärkt die Beschleunigung beim Gasgeben – fühlt sich an wie mehr PS." />
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="2">
+                            <DockPanel>
+                                <CheckBox DockPanel.Dock="Right" Style="{StaticResource Switch}" IsChecked="{Binding NitroEnabled}" AutomationProperties.Name="Nitro" />
+                                <TextBlock Style="{StaticResource Eyebrow}" Text="NITRO" VerticalAlignment="Center" Margin="0" />
+                            </DockPanel>
+                            <TextBlock Style="{StaticResource Numeric}" Text="{Binding NitroAccel, StringFormat={}{0:0.0}}" FontSize="40" Margin="0,6,0,0" />
+                            <Slider Minimum="1" Maximum="20" SmallChange="0.5" LargeChange="2" Value="{Binding NitroAccel}" Margin="0,4,0,6" />
+                            <TextBlock Style="{StaticResource BodyText}" FontSize="12" Text="{Binding NitroText}" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="4">
+                            <DockPanel>
+                                <CheckBox DockPanel.Dock="Right" Style="{StaticResource Switch}" IsChecked="{Binding SpeedCapEnabled}" AutomationProperties.Name="Tempo-Limit" />
+                                <TextBlock Style="{StaticResource Eyebrow}" Text="TEMPO-LIMIT" VerticalAlignment="Center" Margin="0" />
+                            </DockPanel>
+                            <TextBlock Style="{StaticResource Numeric}" Text="{Binding SpeedCapText}" FontSize="40" Margin="0,6,0,0" />
+                            <Slider Minimum="30" Maximum="400" SmallChange="5" LargeChange="10" Value="{Binding SpeedCapKmh}" Margin="0,4,0,6" />
+                            <TextBlock Style="{StaticResource BodyText}" FontSize="12" Text="Deckelt die Geschwindigkeit – praktisch mit Boost im Konvoi." />
+                        </StackPanel>
+                    </Grid>
+                </DockPanel>
+            </Border>
+        </Grid>
+
+        <!-- Plugin status line -->
+        <Border Grid.Row="3" Style="{StaticResource Well}" Margin="0,16,0,0">
+            <DockPanel>
+                <Border DockPanel.Dock="Right" CornerRadius="999" Padding="10,3" Background="{StaticResource AmberWash}" VerticalAlignment="Center">
+                    <TextBlock Text="KONVOI-TAUGLICH" FontFamily="{StaticResource DisplayCondensed}" FontSize="11" FontWeight="Bold" Foreground="{StaticResource Amber}" />
+                </Border>
+                <TextBlock Text="&#xE946;" FontFamily="{StaticResource Icons}" FontSize="14" Foreground="{StaticResource TextDim}" VerticalAlignment="Center" Margin="0,0,10,0" />
+                <TextBlock Style="{StaticResource BodyText}" Text="{Binding PluginMessage}" VerticalAlignment="Center" />
+            </DockPanel>
+        </Border>
+    </Grid>
+</UserControl>

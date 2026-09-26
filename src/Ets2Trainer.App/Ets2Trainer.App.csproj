@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>ETS2Trainer</AssemblyName>
+    <RootNamespace>Ets2Trainer.App</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Ets2Trainer.Core\Ets2Trainer.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Ship the native plugin next to the exe when it has been built. -->
+  <ItemGroup>
+    <None Include="..\plugin\out\ets2_trainer.dll" Condition="Exists('..\plugin\out\ets2_trainer.dll')">
+      <Link>plugin\ets2_trainer.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

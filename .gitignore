@@ -1,0 +1,13 @@
+bin/
+obj/
+dist/
+build/
+*.user
+.vs/
+*.pdb
+*.ilk
+*.obj
+*.exp
+*.lib
+src/plugin/out/
+.remember/
