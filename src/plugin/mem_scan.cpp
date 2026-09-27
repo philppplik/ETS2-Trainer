@@ -80,6 +80,7 @@ struct TargetState {
 struct ScanJob {
     const std::vector<WorkItem>& items;
     const std::vector<ScanTarget>& targets;
+    const std::atomic<bool>* cancel;
     std::uint8_t* scratch;
     std::unique_ptr<TargetState[]> states;
     std::vector<std::vector<HitList>> hits;  // [worker][target]
@@ -169,8 +170,66 @@ void matchDoubleTripleMagnitude(const std::uint8_t* buffer, std::size_t count, d
     }
 }
 
+void matchFloatRange(const std::uint8_t* buffer, std::size_t count, float low, float high,
+                     std::uintptr_t base, HitList& out) {
+    for (std::size_t i = 0; i < count; ++i) {
+        float value;
+        std::memcpy(&value, buffer + i * kFloatBytes, sizeof(value));
+        if (value >= low && value <= high) {  // NaN compares false
+            out.push_back(base + i * kFloatBytes);
+        }
+    }
+}
+
+void matchDoubleValueRange(const std::uint8_t* buffer, std::size_t count, double low, double high,
+                           std::uintptr_t base, HitList& out) {
+    for (std::size_t i = 0; i < count; ++i) {
+        double value;
+        std::memcpy(&value, buffer + i * kDoubleBytes, sizeof(value));
+        if (value >= low && value <= high) {
+            out.push_back(base + i * kDoubleBytes);
+        }
+    }
+}
+
+void matchDoubleTripleBox(const std::uint8_t* buffer, std::size_t count, const double (&low)[3],
+                          const double (&high)[3], std::uintptr_t base, HitList& out) {
+    for (std::size_t i = 0; i < count; ++i) {
+        double x;
+        std::memcpy(&x, buffer + i * kDoubleBytes, sizeof(x));
+        if (!(x >= low[0] && x <= high[0])) {
+            continue;
+        }
+        double yz[2];
+        std::memcpy(yz, buffer + i * kDoubleBytes + kDoubleBytes, sizeof(yz));
+        if (yz[0] >= low[1] && yz[0] <= high[1] && yz[1] >= low[2] && yz[1] <= high[2]) {
+            out.push_back(base + i * kDoubleBytes);
+        }
+    }
+}
+
+// Effective bounds of a target for one chunk (live bounds are re-read per chunk).
+struct Bounds {
+    double lo[3];
+    double hi[3];
+};
+
+Bounds resolveBounds(const ScanTarget& target) noexcept {
+    Bounds bounds{};
+    for (int i = 0; i < 3; ++i) {
+        bounds.lo[i] = target.live != nullptr ? target.live->lo[i].load(std::memory_order_relaxed)
+                                              : target.lo[i];
+        bounds.hi[i] = target.live != nullptr ? target.live->hi[i].load(std::memory_order_relaxed)
+                                              : target.hi[i];
+    }
+    return bounds;
+}
+
 void matchTarget(const ScanTarget& target, const std::uint8_t* buffer, std::size_t positionBytes,
                  std::size_t copied, std::uintptr_t base, HitList& out) {
+    const Bounds b = target.usesBounds() ? resolveBounds(target) : Bounds{};
+    const double minSq = b.lo[0] > 0.0 ? b.lo[0] * b.lo[0] : 0.0;
+    const double maxSq = b.hi[0] * b.hi[0];
     switch (target.kind) {
         case ScanKind::FloatBits:
             matchFloatBits(buffer, positionCount(positionBytes, copied, kFloatBytes, kFloatBytes),
@@ -189,13 +248,26 @@ void matchTarget(const ScanTarget& target, const std::uint8_t* buffer, std::size
         case ScanKind::FloatTripleMagnitude:
             matchFloatTripleMagnitude(
                 buffer, positionCount(positionBytes, copied, 3 * kFloatBytes, kFloatBytes),
-                static_cast<float>(target.minMagnitudeSq),
-                static_cast<float>(target.maxMagnitudeSq), base, out);
+                static_cast<float>(minSq), static_cast<float>(maxSq), base, out);
             break;
         case ScanKind::DoubleTripleMagnitude:
             matchDoubleTripleMagnitude(
                 buffer, positionCount(positionBytes, copied, 3 * kDoubleBytes, kDoubleBytes),
-                target.minMagnitudeSq, target.maxMagnitudeSq, base, out);
+                minSq, maxSq, base, out);
+            break;
+        case ScanKind::FloatRange:
+            matchFloatRange(buffer, positionCount(positionBytes, copied, kFloatBytes, kFloatBytes),
+                            static_cast<float>(b.lo[0]), static_cast<float>(b.hi[0]), base, out);
+            break;
+        case ScanKind::DoubleRange:
+            matchDoubleValueRange(
+                buffer, positionCount(positionBytes, copied, kDoubleBytes, kDoubleBytes), b.lo[0],
+                b.hi[0], base, out);
+            break;
+        case ScanKind::DoubleTripleBox:
+            matchDoubleTripleBox(
+                buffer, positionCount(positionBytes, copied, 3 * kDoubleBytes, kDoubleBytes),
+                b.lo, b.hi, base, out);
             break;
     }
 }
@@ -223,10 +295,15 @@ void scanChunk(ScanJob& job, const std::uint8_t* buffer, std::size_t positionByt
 
 void scanWorker(ScanJob& job, unsigned worker) {
     const FlushDenormalsGuard denormals;
+    if (worker != 0) {
+        // Extra threads only live for this scan; worker 0 is the caller (maybe the game thread).
+        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+    }
     std::uint8_t* buffer = job.scratch + static_cast<std::size_t>(worker) * kScratchStride;
     std::vector<HitList>& hits = job.hits[worker];
     for (;;) {
-        if (job.allTargetsOverflowed()) {
+        if (job.allTargetsOverflowed() ||
+            (job.cancel != nullptr && job.cancel->load(std::memory_order_relaxed))) {
             return;
         }
         const std::size_t index = job.nextItem.fetch_add(1, std::memory_order_relaxed);
@@ -284,13 +361,22 @@ std::vector<ScanResult> mergeResults(ScanJob& job) {
 std::vector<ScanResult> scanWithScratch(const std::vector<Range>& ranges,
                                         const std::vector<ScanTarget>& targets,
                                         const ScratchBlock& scratch, unsigned workers,
-                                        ScanStats* stats) {
+                                        ScanStats* stats, const std::atomic<bool>* cancel) {
     const auto started = std::chrono::steady_clock::now();
     const std::vector<WorkItem> items = splitIntoWorkItems(ranges);
-    ScanJob job{items, targets, scratch.data(), std::make_unique<TargetState[]>(targets.size()),
+    ScanJob job{items,
+                targets,
+                cancel,
+                scratch.data(),
+                std::make_unique<TargetState[]>(targets.size()),
                 std::vector<std::vector<HitList>>(workers, std::vector<HitList>(targets.size()))};
     detail::runParallel(workers, [&job](unsigned worker) { scanWorker(job, worker); });
-    std::vector<ScanResult> results = mergeResults(job);
+    const bool cancelled = cancel != nullptr && cancel->load();
+    std::vector<ScanResult> results = cancelled ? std::vector<ScanResult>(targets.size())
+                                                : mergeResults(job);
+    if (stats != nullptr) {
+        stats->cancelled = cancelled;
+    }
 
     if (stats != nullptr) {
         stats->regions = ranges.size();
@@ -335,9 +421,50 @@ ScanTarget ScanTarget::exactDoubleTriple(const double (&xyz)[3]) noexcept {
 ScanTarget ScanTarget::floatTripleMagnitude(double minMagnitude, double maxMagnitude) noexcept {
     ScanTarget target;
     target.kind = ScanKind::FloatTripleMagnitude;
-    target.minMagnitudeSq = minMagnitude * minMagnitude;
-    target.maxMagnitudeSq = maxMagnitude * maxMagnitude;
+    target.lo[0] = minMagnitude;
+    target.hi[0] = maxMagnitude;
     return target;
+}
+
+ScanTarget ScanTarget::floatRange(double low, double high) noexcept {
+    ScanTarget target;
+    target.kind = ScanKind::FloatRange;
+    target.lo[0] = low;
+    target.hi[0] = high;
+    return target;
+}
+
+ScanTarget ScanTarget::doubleValueRange(double low, double high) noexcept {
+    ScanTarget target = floatRange(low, high);
+    target.kind = ScanKind::DoubleRange;
+    return target;
+}
+
+ScanTarget ScanTarget::doubleTripleBox(const double (&low)[3], const double (&high)[3]) noexcept {
+    ScanTarget target;
+    target.kind = ScanKind::DoubleTripleBox;
+    for (int i = 0; i < 3; ++i) {
+        target.lo[i] = low[i];
+        target.hi[i] = high[i];
+    }
+    return target;
+}
+
+bool ScanTarget::usesBounds() const noexcept {
+    switch (kind) {
+        case ScanKind::FloatTripleMagnitude:
+        case ScanKind::DoubleTripleMagnitude:
+        case ScanKind::FloatRange:
+        case ScanKind::DoubleRange:
+        case ScanKind::DoubleTripleBox: return true;
+        default: return false;
+    }
+}
+
+void initLiveBounds(const ScanTarget& target, LiveBounds& bounds) noexcept {
+    for (int i = 0; i < 3; ++i) {
+        bounds.set(i, target.lo[i], target.hi[i]);
+    }
 }
 
 ScanTarget ScanTarget::doubleTripleMagnitude(double minMagnitude, double maxMagnitude) noexcept {
@@ -351,15 +478,16 @@ unsigned workerCount() noexcept {
     return std::max(1u, std::min(hardware, kMaxWorkers));
 }
 
-std::vector<ScanResult> scanProcess(const std::vector<ScanTarget>& targets, ScanStats* stats) {
+std::vector<ScanResult> scanProcess(const std::vector<ScanTarget>& targets, ScanStats* stats,
+                                    unsigned workers, const std::atomic<bool>* cancel) {
     if (targets.empty()) {
         return {};
     }
-    const unsigned workers = workerCount();
-    const ScratchBlock scratch(static_cast<std::size_t>(workers) * kScratchStride);
+    const unsigned count = workers == 0 ? workerCount() : std::min(workers, kMaxWorkers);
+    const ScratchBlock scratch(static_cast<std::size_t>(count) * kScratchStride);
     std::vector<Range> exclusions = defaultExclusions();
     exclusions.push_back(scratch.range());
-    return scanWithScratch(writableRegions(exclusions), targets, scratch, workers, stats);
+    return scanWithScratch(writableRegions(exclusions), targets, scratch, count, stats, cancel);
 }
 
 std::vector<ScanResult> scanRanges(const std::vector<Range>& ranges,
@@ -369,7 +497,7 @@ std::vector<ScanResult> scanRanges(const std::vector<Range>& ranges,
     }
     const unsigned workers = workerCount();
     const ScratchBlock scratch(static_cast<std::size_t>(workers) * kScratchStride);
-    return scanWithScratch(ranges, targets, scratch, workers, stats);
+    return scanWithScratch(ranges, targets, scratch, workers, stats, nullptr);
 }
 
 namespace detail {

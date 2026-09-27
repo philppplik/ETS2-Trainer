@@ -17,6 +17,9 @@ constexpr std::uint32_t kVerifyFrames = 3;
 constexpr float kVerifyToleranceFraction = 0.25f;  // of |test - original|
 constexpr std::uint32_t kMaxRetries = 3;
 constexpr std::uint8_t kMaxMismatchFrames = 3;
+constexpr double kDoubleSlackFraction = 1.0e-7;  // > half a float ULP: doubles rounding to it
+constexpr double kPredictFrames = 3.0;           // frames of change covered ahead of time
+constexpr float kMaxPredictFraction = 0.05f;     // ignore jumps (refuel, repair)
 
 bool readRaw(const ScalarCandidate& candidate, std::uint64_t& raw) noexcept {
     if (candidate.encoding == ScalarEncoding::Float32) {
@@ -95,6 +98,9 @@ void ScalarCalibrator::update(float value, float limit, bool available,
                               const CalibrationContext& ctx) {
     const std::uint32_t bits = mem::floatBits(value);
     const bool changed = bits != valueBits_;
+    if (changed && mem::isFiniteFloatBits(bits) && mem::isFiniteFloatBits(valueBits_)) {
+        lastDelta_ = std::min(std::fabs(value - value_), std::fabs(value) * kMaxPredictFraction);
+    }
     value_ = value;
     valueBits_ = bits;
     limit_ = limit;
@@ -164,9 +170,26 @@ bool ScalarCalibrator::wantsScan() const noexcept {
     return mem::isDistinctiveFloat(value_, config_.minDistinctive, kMaxTrailingZeroBits);
 }
 
+// Background scans use value ranges that widenScanTargets() grows with every telemetry value
+// seen while the scan runs; onScanResults() then keeps only exact matches of the current value.
 void ScalarCalibrator::appendScanTargets(std::vector<mem::ScanTarget>& targets) const {
-    targets.push_back(mem::ScanTarget::exactFloat(value_));
-    targets.push_back(mem::ScanTarget::doubleRoundingTo(value_));
+    const double value = static_cast<double>(value_);
+    const double predict = kPredictFrames * static_cast<double>(lastDelta_);
+    const double slack = std::fabs(value) * kDoubleSlackFraction + predict;
+    targets.push_back(mem::ScanTarget::floatRange(value - predict, value + predict));
+    targets.push_back(mem::ScanTarget::doubleValueRange(value - slack, value + slack));
+}
+
+void ScalarCalibrator::widenScanTargets(mem::LiveBounds* bounds, std::size_t count) const {
+    constexpr std::size_t kTargetsPerScan = 2;
+    if (bounds == nullptr || count < kTargetsPerScan || !mem::isFiniteFloatBits(valueBits_)) {
+        return;
+    }
+    const double value = static_cast<double>(value_);
+    const double predict = kPredictFrames * static_cast<double>(lastDelta_);
+    const double slack = std::fabs(value) * kDoubleSlackFraction + predict;
+    bounds[0].widen(0, value - predict, value + predict);
+    bounds[1].widen(0, value - slack, value + slack);
 }
 
 void ScalarCalibrator::onScanResults(const mem::ScanResult* results, std::size_t count) {
@@ -192,6 +215,13 @@ void ScalarCalibrator::onScanResults(const mem::ScanResult* results, std::size_t
     }
     log::info("%s: scan for %.6g -> %zu float + %zu double candidates", config_.name,
               static_cast<double>(value_), results[0].hits.size(), results[1].hits.size());
+    // The range scan also caught values from earlier frames: keep exact current matches only.
+    const std::uint32_t bits = valueBits_;
+    const mem::DoubleRange current = mem::doubleRangeRoundingTo(value_);
+    mem::parallelFilter(candidates_, [bits, &current](const ScalarCandidate& candidate) {
+        return matchesValue(candidate, bits, current);
+    });
+    log::info("%s: %zu candidates match the current value", config_.name, candidates_.size());
     if (candidates_.empty()) {
         retry("Wert nicht im Speicher gefunden");
         return;

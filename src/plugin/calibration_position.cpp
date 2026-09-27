@@ -16,6 +16,10 @@ constexpr std::uint32_t kMaxRetries = 3;
 constexpr std::uint8_t kMaxMismatchFrames = 3;
 constexpr std::size_t kMaxHits = 200'000;
 constexpr std::uintptr_t kYOffset = sizeof(double);
+constexpr double kBaseTolerance = 0.02;             // m
+constexpr double kToleranceSecondsOfTravel = 0.05;  // physics may run a step after telemetry
+constexpr double kScanMargin = 0.05;                // m around the positions seen during the scan
+constexpr double kMaxNudge = 100.0;                 // m
 
 }  // namespace
 
@@ -53,6 +57,7 @@ void PositionCalibrator::update(const PositionInput& input, const CalibrationCon
         pos_[i] = input.pos[i];
         finite = finite && std::isfinite(input.pos[i]);
     }
+    speed_ = std::isfinite(input.speed) ? std::fabs(input.speed) : 0.0f;
     available_ = input.available && finite;
     if (!requested_ || !available_) {
         return;
@@ -88,6 +93,34 @@ bool PositionCalibrator::teleport(const double (&target)[3]) {
     return written;
 }
 
+bool PositionCalibrator::nudge(const double (&delta)[3]) {
+    if (state_ != FeatureState::Active) {
+        return false;
+    }
+    double target[3];
+    for (int i = 0; i < 3; ++i) {
+        if (!std::isfinite(delta[i]) || std::fabs(delta[i]) > kMaxNudge) {
+            return false;
+        }
+        target[i] = pos_[i] + delta[i];
+    }
+    return teleport(target);
+}
+
+double PositionCalibrator::tolerance() const noexcept {
+    return kBaseTolerance + static_cast<double>(speed_) * kToleranceSecondsOfTravel;
+}
+
+void PositionCalibrator::widenScanTargets(mem::LiveBounds* bounds, std::size_t count) const {
+    if (bounds == nullptr || count < 1 || !available_) {
+        return;
+    }
+    const double margin = kScanMargin + tolerance();
+    for (int i = 0; i < 3; ++i) {
+        bounds[0].widen(i, pos_[i] - margin, pos_[i] + margin);
+    }
+}
+
 std::uint32_t PositionCalibrator::candidateCount() const noexcept {
     switch (state_) {
         case FeatureState::Calibrating: return static_cast<std::uint32_t>(candidates_.size());
@@ -114,7 +147,14 @@ bool PositionCalibrator::wantsScan() const noexcept {
 }
 
 void PositionCalibrator::appendScanTargets(std::vector<mem::ScanTarget>& targets) const {
-    mem::ScanTarget target = mem::ScanTarget::exactDoubleTriple(pos_);
+    const double margin = kScanMargin + tolerance();
+    double low[3];
+    double high[3];
+    for (int i = 0; i < 3; ++i) {
+        low[i] = pos_[i] - margin;
+        high[i] = pos_[i] + margin;
+    }
+    mem::ScanTarget target = mem::ScanTarget::doubleTripleBox(low, high);
     target.maxHits = kMaxHits;
     targets.push_back(target);
 }
@@ -137,6 +177,7 @@ void PositionCalibrator::onScanResults(const mem::ScanResult* results, std::size
         return;
     }
     state_ = FeatureState::Calibrating;
+    filterCandidates();  // the box covered earlier positions too: keep what matches now
 }
 
 bool PositionCalibrator::matchesTelemetry(std::uintptr_t address) const noexcept {
@@ -144,8 +185,12 @@ bool PositionCalibrator::matchesTelemetry(std::uintptr_t address) const noexcept
     if (!mem::readAt(address, bits)) {
         return false;
     }
+    const double limit = tolerance();
     for (int i = 0; i < 3; ++i) {
-        if (bits[i] != mem::doubleBits(pos_[i])) {
+        if (!mem::isFiniteDoubleBits(bits[i])) {
+            return false;
+        }
+        if (std::fabs(mem::doubleFromBits(bits[i]) - pos_[i]) > limit) {
             return false;
         }
     }

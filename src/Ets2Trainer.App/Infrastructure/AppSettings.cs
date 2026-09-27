@@ -20,6 +20,22 @@ public sealed record AppSettings
 
     public bool AlwaysOnTop { get; init; } = true;
 
+    public uint JumpVk { get; init; } = 0x61;   // Num 1
+
+    public uint RocketVk { get; init; } = 0x62; // Num 2
+
+    public uint RollVk { get; init; } = 0x63;   // Num 3
+
+    public uint HoverVk { get; init; } = 0x60;  // Num 0 (hold)
+
+    public uint UnflipVk { get; init; } = 0x65; // Num 5
+
+    public bool PrepareMotion { get; init; }
+
+    public float MoonGravity { get; init; } = 0.7f;
+
+    public float SpinSpeed { get; init; } = 1f;
+
     public string? LastProfileDirectory { get; init; }
 
     private static string FilePath => Path.Combine(

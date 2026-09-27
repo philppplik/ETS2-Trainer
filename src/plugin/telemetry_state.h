@@ -61,6 +61,12 @@ struct TelemetryState {
     char truckId[kTelemetryIdText] = {};  // "<brand_id>.<id>"
     char cargo[kTelemetryText] = {};
     char destinationCity[kTelemetryText] = {};
+    char destinationCityId[kTelemetryText] = {};
+    char destinationCompanyId[kTelemetryText] = {};
+    char sourceCityId[kTelemetryText] = {};
+    char sourceCompanyId[kTelemetryText] = {};
+    std::uint32_t jobStartedCount = 0;    // job configuration arrived (truck at the source)
+    std::uint32_t jobDeliveredCount = 0;  // job.delivered gameplay events
 
     std::uint32_t gameVersion = 0;  // SCS game telemetry version (major << 16 | minor)
 };

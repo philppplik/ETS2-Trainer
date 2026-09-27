@@ -28,6 +28,11 @@ public static class KeyNames
         new(0x06, "Maus 5"),
     };
 
+    /// <summary>Num 0–9: default trick hotkeys (jump, rocket, roll, hover, unflip).</summary>
+    public static readonly IReadOnlyList<KeyOption> NumpadKeys = Enumerable.Range(0, 10)
+        .Select(i => new KeyOption((uint)(0x60 + i), $"Num {i}"))
+        .ToList();
+
     public static string Name(uint vk) =>
-        MenuKeys.Concat(NitroKeys).FirstOrDefault(k => k.VirtualKey == vk)?.Label ?? $"0x{vk:X2}";
+        MenuKeys.Concat(NitroKeys).Concat(NumpadKeys).FirstOrDefault(k => k.VirtualKey == vk)?.Label ?? $"0x{vk:X2}";
 }

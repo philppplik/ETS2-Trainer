@@ -184,7 +184,7 @@ public static class BridgeTests
     [Test]
     public static void Layout_MatchesCppStaticAsserts()
     {
-        Assert.Equal(888, BridgeProtocol.SharedSize, "shared size");
+        Assert.Equal(1152, BridgeProtocol.SharedSize, "shared size");
         Assert.Equal(BridgeProtocol.TelemetryOffset + BridgeProtocol.TelemetrySize, BridgeProtocol.StatusOffset, "status follows telemetry");
         Assert.Equal(BridgeProtocol.StatusOffset + BridgeProtocol.StatusSize, BridgeProtocol.ControlOffset, "control follows status");
         Assert.Equal(BridgeProtocol.ControlOffset + BridgeProtocol.ControlSize, BridgeProtocol.SharedSize, "control ends block");

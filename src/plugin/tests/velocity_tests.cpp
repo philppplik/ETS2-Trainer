@@ -159,18 +159,28 @@ E2T_TEST(position_calibration_and_teleport) {
     CHECK(containsAddress(position.confirmed(), h.game->positionAddress()));
     CHECK(!containsAddress(position.confirmed(), addressOf(h.game->decoys().mirrorPosition[0])));
     CHECK(messageContains("Teleport ausgef"));
+
+    // The calibration is kept (request cleared, status still active): a second teleport is
+    // executed within a couple of frames, without a new scan.
+    runFrames(2);
+    CHECK(h.status.position.state == static_cast<std::uint32_t>(FeatureState::Active));
+    const double second[3] = {target[0] - 800.0, kGroundY, target[2] + 400.0};
+    issueCommand(CommandType::Teleport, second[0], second[1], second[2]);
+    CHECK(runUntil(
+        [&] { return distanceTo(h.game->truck().position, second) < kArrivalRadius; }, 3));
 }
 
-E2T_TEST(teleport_refused_with_trailer_attached) {
+// Teleporting with a trailer is allowed now (the trailer simply stays behind); the command must
+// be accepted and start the position calibration.
+E2T_TEST(teleport_with_trailer_attached_is_accepted) {
     setUp(kDistinctiveFuel, 5.0f);
     Harness& h = harness();
     h.game->setTrailer(true);
     runFrames(2);
     issueCommand(CommandType::Teleport, 1.0, 2.0, 3.0);
     frame();
-    CHECK(messageContains("Anh"));
     CHECK(h.status.lastCommandAck == h.control.commandSeq);
-    CHECK(h.status.position.state == static_cast<std::uint32_t>(FeatureState::Off));
+    CHECK(h.status.position.state != static_cast<std::uint32_t>(FeatureState::Off));
 }
 
 }  // namespace e2t::test

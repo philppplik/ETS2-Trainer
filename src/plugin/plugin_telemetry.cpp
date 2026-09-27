@@ -151,7 +151,10 @@ void applyTruckConfig(const scs::NamedValue* attributes, TelemetryState& state) 
 }
 
 void applyJobConfig(const scs::NamedValue* attributes, TelemetryState& state) {
+    const bool hadJob = state.cargo[0] != '\0';
     state.cargo[0] = state.destinationCity[0] = '\0';
+    state.destinationCityId[0] = state.destinationCompanyId[0] = '\0';
+    state.sourceCityId[0] = state.sourceCompanyId[0] = '\0';
     if (attributes == nullptr) {
         return;
     }
@@ -160,10 +163,22 @@ void applyJobConfig(const scs::NamedValue* attributes, TelemetryState& state) {
             copyUtf8(state.cargo, stringValue(*a));
         } else if (isAttribute(*a, scs::config::kAttrDestinationCity, scs::kValueString)) {
             copyUtf8(state.destinationCity, stringValue(*a));
+        } else if (isAttribute(*a, scs::config::kAttrDestinationCityId, scs::kValueString)) {
+            copyUtf8(state.destinationCityId, stringValue(*a));
+        } else if (isAttribute(*a, scs::config::kAttrDestinationCompanyId, scs::kValueString)) {
+            copyUtf8(state.destinationCompanyId, stringValue(*a));
+        } else if (isAttribute(*a, scs::config::kAttrSourceCityId, scs::kValueString)) {
+            copyUtf8(state.sourceCityId, stringValue(*a));
+        } else if (isAttribute(*a, scs::config::kAttrSourceCompanyId, scs::kValueString)) {
+            copyUtf8(state.sourceCompanyId, stringValue(*a));
         }
     }
     if (state.cargo[0] != '\0') {
-        log::info("job: %s -> %s", state.cargo, state.destinationCity);
+        if (!hadJob) {
+            ++state.jobStartedCount;  // the truck stands at the source company right now
+        }
+        log::info("job: %s %s/%s -> %s/%s", state.cargo, state.sourceCompanyId, state.sourceCityId,
+                  state.destinationCompanyId, state.destinationCityId);
     }
 }
 
@@ -284,6 +299,13 @@ void fillBridgeTelemetry(const TelemetryState& s, bool truckersMp, Telemetry& ou
     copyUtf8(out.truckId, s.hasTruck ? s.truckId : "");
     copyUtf8(out.cargo, s.cargo);
     copyUtf8(out.destinationCity, s.destinationCity);
+    copyUtf8(out.destinationCityId, s.destinationCityId);
+    copyUtf8(out.destinationCompanyId, s.destinationCompanyId);
+    copyUtf8(out.sourceCityId, s.sourceCityId);
+    copyUtf8(out.sourceCompanyId, s.sourceCompanyId);
+    if (s.cargo[0] != '\0') {
+        out.flags |= kFlagHasJob;
+    }
 }
 
 }  // namespace e2t::plugin

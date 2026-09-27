@@ -9,6 +9,8 @@ namespace Ets2Trainer.App.ViewModels;
 public enum Section
 {
     Live,
+    Teleport,
+    Fun,
     Company,
     Fleet,
     Workshop,
@@ -31,11 +33,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private bool _gameRunning;
     private int _tickCount;
 
-    public MainViewModel()
+    public MainViewModel(bool offline = false)
     {
         _settings = AppSettings.Load();
         GameDirectory = GamePaths.FindGameDirectory();
-        Live = new LiveViewModel(this);
+        Live = new LiveViewModel(this, offline);
+        Teleport = new TeleportViewModel(this);
+        Fun = new FunViewModel(this);
         Save = new SaveEditorViewModel(this);
         Workshop = new WorkshopViewModel(this, Save);
         Setup = new SetupViewModel(this);
@@ -59,6 +63,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public event Action? SettingsChanged;
 
     public LiveViewModel Live { get; }
+
+    public TeleportViewModel Teleport { get; }
+
+    public FunViewModel Fun { get; }
 
     public SaveEditorViewModel Save { get; }
 
@@ -132,6 +140,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     public void ShowError(Exception ex) => ShowToast("Fehler: " + ex.Message, isError: true);
 
+    public void ShowError(string message) => ShowToast(message, isError: true);
+
     public void OnSaveLoaded() => Workshop.OnSaveLoaded();
 
     public void Dispose()
@@ -152,6 +162,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private void OnTick()
     {
         Live.Tick();
+        Teleport.Tick();
+        Fun.Tick();
         if (_tickCount++ % GameCheckEveryTicks == 0)
         {
             GameRunning = SaveSlotService.IsGameRunning();

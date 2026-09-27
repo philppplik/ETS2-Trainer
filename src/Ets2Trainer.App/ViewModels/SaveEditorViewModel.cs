@@ -16,6 +16,7 @@ public sealed record TruckRow(string Model, string Plate, string Wear, string Fu
 public sealed class SaveEditorViewModel : ObservableObject
 {
     private const long MaxDriverXp = 5_000_000;
+    private static readonly TimeSpan CloudWriteTimeout = TimeSpan.FromSeconds(20);
 
     private static readonly CultureInfo German = CultureInfo.GetCultureInfo("de-DE");
     private static readonly string[] AdrLabels =
@@ -212,6 +213,12 @@ public sealed class SaveEditorViewModel : ObservableObject
         var loaded = _loaded!;
         PushToModel();
         var mode = Overwrite ? SaveWriteMode.OverwriteWithBackup : SaveWriteMode.NewSlot;
+        if (_selectedProfile is { IsSteamCloud: true } cloudProfile)
+        {
+            await SaveToCloudAsync(loaded, cloudProfile, mode);
+            return;
+        }
+
         _main.Busy("Speichere …");
         var folder = await Task.Run(() => SaveSlotService.Write(loaded, mode));
         IsDirty = false;
@@ -220,6 +227,44 @@ public sealed class SaveEditorViewModel : ObservableObject
             ? "Jetzt im Spiel: Menü → Laden → „[Trainer] …“ wählen."
             : "Beim nächsten Start unter „Laden“ auswählen.";
         _main.Toast($"Gespeichert (Ordner {Path.GetFileName(folder)}). {hint}");
+    }
+
+    /// <summary>
+    /// Steam-Cloud profiles are read by ETS2 through Steam, so files written from outside stay
+    /// invisible in-game. The save is staged locally and the plugin writes it through the game's Steam API.
+    /// </summary>
+    private async Task SaveToCloudAsync(LoadedSave loaded, ProfileInfo profile, SaveWriteMode mode)
+    {
+        if (!_main.Live.CanWriteCloudSaves)
+        {
+            _main.ShowError("Steam-Cloud-Profil: Starte ETS2 mit dem Plugin (Hauptmenü reicht) und speichere dann erneut – nur so zeigt das Spiel den Spielstand an.");
+            return;
+        }
+
+        _main.Busy("Speichere über Steam Cloud …");
+        var folder = await Task.Run(() =>
+        {
+            if (mode == SaveWriteMode.OverwriteWithBackup)
+            {
+                SaveSlotService.BackupFolder(loaded.Slot.Directory);
+            }
+
+            var slotFolder = SaveSlotService.PrepareForWrite(loaded, mode);
+            CloudSaveStager.Stage(loaded, profile, slotFolder);
+            return slotFolder;
+        });
+
+        var (code, message) = await _main.Live.WriteCloudSaveAsync(CloudWriteTimeout);
+        if (code < 0)
+        {
+            _main.ShowError($"Speichern fehlgeschlagen: {message}");
+            return;
+        }
+
+        CloudSaveStager.CleanUp();
+        IsDirty = false;
+        RefreshSlots();
+        _main.Toast($"In Steam Cloud gespeichert (Ordner {folder}). Im Spiel: Laden → „[Trainer] …“ – ist das Menü schon offen, einmal schließen und neu öffnen.");
     }
 
     private void PullFromModel()

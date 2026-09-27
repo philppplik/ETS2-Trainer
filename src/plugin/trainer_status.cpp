@@ -3,6 +3,8 @@
 #include <cstdio>
 #include <string>
 
+#include "cloud_storage.h"
+#include "input_device.h"
 #include "text_util.h"
 #include "trainer.h"
 
@@ -30,8 +32,14 @@ int stateRank(FeatureState state) noexcept {
     }
 }
 
+bool motionWanted(const Control& control) noexcept {
+    constexpr std::uint32_t kPhysicsFun = kFunMoonGravity | kFunAnchor | kFunSpin | kFunAutoUpright;
+    return control.prepareMotion != 0 || (control.funFlags & kPhysicsFun) != 0;
+}
+
 bool velocityWanted(const Control& control) noexcept {
-    return control.powerBoost != 0 || control.nitroEnabled != 0 || control.speedCapEnabled != 0;
+    return control.powerBoost != 0 || control.nitroEnabled != 0 || control.speedCapEnabled != 0 ||
+           motionWanted(control);
 }
 
 template <class Calibrator>
@@ -45,7 +53,7 @@ FeatureStatus featureStatus(const Calibrator& calibrator, bool wanted, bool bloc
         status.state = static_cast<std::uint32_t>(FeatureState::Blocked);
         return status;
     }
-    const FeatureState state = calibrator.state();
+    const FeatureState state = calibrator.isActive() ? FeatureState::Active : calibrator.state();
     status.state = static_cast<std::uint32_t>(state == FeatureState::Off
                                                   ? FeatureState::WaitingForData
                                                   : state);
@@ -137,7 +145,9 @@ void Trainer::fillStatus(const Control& control, Gate gate, std::uint64_t now,
     status.fuel = featureStatus(fuel_, control.infiniteFuel != 0 || pendingRefuel_, blocked);
     status.wear = wearStatus(control, gate);
     status.velocity = featureStatus(velocity_, velocityWanted(control), blocked);
-    status.position = featureStatus(position_, positionRequested_, blocked);
+    status.position = featureStatus(position_, positionRequested_ || motionWanted(control) ||
+                                                   position_.isActive(),
+                                    blocked);
     status.lastCommandAck = lastCommandSeq_;
     status.activeFlags = activeFlags_;
     status.menuToggleCount = menuToggleCount_;
@@ -216,8 +226,26 @@ bool Trainer::composeHint(const Control& control, char* out, std::size_t size) c
     if (out[0] == '\0' && velocityWanted(control) && !velocity_.isActive()) {
         velocityHint(velocity_, out, size);
     }
-    if (out[0] == '\0' && (positionRequested_ || pendingTeleport_) && !position_.isActive()) {
+    if (out[0] == '\0' && (positionRequested_ || pendingTeleport_ || motionWanted(control)) &&
+        !position_.isActive()) {
         positionHint(position_, out, size);
+    }
+    if (out[0] == '\0' && motionWanted(control) && position_.isActive() &&
+        !orientation_.isActive()) {
+        switch (orientation_.state()) {
+            case FeatureState::Failed:
+                std::snprintf(out, size, u8"Rotation: Kalibrierung fehlgeschlagen (%s)",
+                              orientation_.failReason());
+                break;
+            case FeatureState::Verifying:
+                std::snprintf(out, size, u8"Rotation: prüfe Kandidaten (%u)",
+                              orientation_.candidateCount());
+                break;
+            default:
+                std::snprintf(out, size, "%s",
+                              u8"Rotation: fahr eine Kurve, damit der Trainer die Drehung findet");
+                break;
+        }
     }
     return out[0] != '\0';
 }
@@ -235,6 +263,31 @@ void Trainer::composeActiveList(char* out, std::size_t size) const {
     if ((activeFlags_ & kActiveNitro) != 0) appendItem(list, sizeof(list), first, u8"Nitro");
     if ((activeFlags_ & kActiveSpeedCap) != 0) appendItem(list, sizeof(list), first, u8"Tempolimit");
     copyUtf8(out, size, list);
+}
+
+}  // namespace e2t
+
+namespace e2t {
+
+// Fields added with bridge protocol v2 (orientation, capabilities, counters, cloud saves).
+void Trainer::fillExtendedStatus(const TelemetryState& tel, const Control& control, Gate gate,
+                                 Status& status) {
+    constexpr std::uint64_t kCloudCheckIntervalMs = 5'000;
+    const std::uint64_t now = platform_.nowMs();
+    if (!cloudChecked_ || now - lastCloudCheckMs_ >= kCloudCheckIntervalMs) {
+        cloudAvailable_ = cloud::available();
+        cloudChecked_ = true;
+        lastCloudCheckMs_ = now;
+    }
+    status.orientation = featureStatus(orientation_, motionWanted(control) || orientation_.isActive(),
+                                       gate != Gate::Open);
+    status.capabilities = (cloudAvailable_ ? kCapCloudSaves : 0u) |
+                          (input::registered() ? kCapInputDevice : 0u);
+    status.breadcrumbCount = static_cast<std::uint32_t>(crumbCount_);
+    status.jobStartedCount = tel.jobStartedCount;
+    status.jobDeliveredCount = tel.jobDeliveredCount;
+    status.saveWriteAck = saveWriteAck_;
+    status.saveWriteResult = saveWriteResult_;
 }
 
 }  // namespace e2t

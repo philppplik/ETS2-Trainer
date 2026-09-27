@@ -26,6 +26,12 @@
                 <RadioButton DockPanel.Dock="Top" Style="{StaticResource NavItem}" Tag="&#xE945;" Content="LIVE"
                              IsChecked="{Binding CurrentSection, Mode=OneWay, Converter={StaticResource EnumMatch}, ConverterParameter=Live}"
                              Command="{Binding NavigateCommand}" CommandParameter="Live" />
+                <RadioButton DockPanel.Dock="Top" Style="{StaticResource NavItem}" Tag="&#xE707;" Content="TELEPORT"
+                             IsChecked="{Binding CurrentSection, Mode=OneWay, Converter={StaticResource EnumMatch}, ConverterParameter=Teleport}"
+                             Command="{Binding NavigateCommand}" CommandParameter="Teleport" />
+                <RadioButton DockPanel.Dock="Top" Style="{StaticResource NavItem}" Tag="&#xE76E;" Content="SPASS"
+                             IsChecked="{Binding CurrentSection, Mode=OneWay, Converter={StaticResource EnumMatch}, ConverterParameter=Fun}"
+                             Command="{Binding NavigateCommand}" CommandParameter="Fun" />
                 <RadioButton DockPanel.Dock="Top" Style="{StaticResource NavItem}" Tag="&#xE825;" Content="FIRMA"
                              IsChecked="{Binding CurrentSection, Mode=OneWay, Converter={StaticResource EnumMatch}, ConverterParameter=Company}"
                              Command="{Binding NavigateCommand}" CommandParameter="Company" />
@@ -103,6 +109,10 @@
             <Grid Grid.Row="1" Margin="28,4,28,24">
                 <views:LiveView DataContext="{Binding Live}"
                                 Visibility="{Binding DataContext.CurrentSection, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource EnumMatch}, ConverterParameter=Live}" />
+                <views:TeleportView DataContext="{Binding Teleport}"
+                                    Visibility="{Binding DataContext.CurrentSection, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource EnumMatch}, ConverterParameter=Teleport}" />
+                <views:FunView DataContext="{Binding Fun}"
+                               Visibility="{Binding DataContext.CurrentSection, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource EnumMatch}, ConverterParameter=Fun}" />
                 <views:CompanyView DataContext="{Binding Save}"
                                    Visibility="{Binding DataContext.CurrentSection, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource EnumMatch}, ConverterParameter=Company}" />
                 <views:FleetView DataContext="{Binding Save}"

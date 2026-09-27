@@ -1,0 +1,173 @@
+<UserControl x:Class="Ets2Trainer.App.Views.TeleportView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Hero: recovery -->
+        <Border CornerRadius="16" Padding="30,24" Background="{StaticResource HeroGlow}" BorderBrush="{StaticResource Line}" BorderThickness="1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Style="{StaticResource Eyebrow}" Text="PANNENHILFE" />
+                    <TextBlock Style="{StaticResource CardTitle}" FontSize="26" Text="Umgekippt oder festgefahren?" />
+                    <TextBlock Style="{StaticResource BodyText}" Margin="0,4,0,16" TextWrapping="Wrap" MaxWidth="560" HorizontalAlignment="Left"
+                               Text="Aufstellen richtet den Truck an Ort und Stelle wieder auf. „Zurück auf die Straße“ setzt dich auf den letzten sicheren Punkt deiner Strecke – aufrecht und in Fahrtrichtung." />
+                    <StackPanel Orientation="Horizontal">
+                        <Button Style="{StaticResource PrimaryButton}" Command="{Binding UnflipCommand}" Margin="0,0,10,0">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE7AD;" FontFamily="{StaticResource Icons}" FontSize="15" Margin="0,0,10,0" VerticalAlignment="Center" />
+                                <TextBlock Text="Aufstellen" />
+                            </StackPanel>
+                        </Button>
+                        <Button Style="{StaticResource GhostButton}" Command="{Binding ReturnCommand}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE7A7;" FontFamily="{StaticResource Icons}" FontSize="15" Margin="0,0,10,0" VerticalAlignment="Center" />
+                                <TextBlock Text="Zurück auf die Straße" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                    <TextBlock Style="{StaticResource BodyText}" FontSize="12" Margin="0,12,0,0" Text="{Binding BreadcrumbText}" />
+                </StackPanel>
+
+                <!-- Motion calibration -->
+                <Border Grid.Column="1" Style="{StaticResource Well}" MinWidth="250" VerticalAlignment="Top">
+                    <StackPanel>
+                        <DockPanel>
+                            <CheckBox DockPanel.Dock="Right" Style="{StaticResource Switch}" IsChecked="{Binding PrepareMotion}"
+                                      AutomationProperties.Name="Bewegung vorbereiten" />
+                            <TextBlock Style="{StaticResource Eyebrow}" Text="BEWEGUNG VORBEREITEN" VerticalAlignment="Center" Margin="0" />
+                        </DockPanel>
+                        <TextBlock Style="{StaticResource BodyText}" FontSize="12" TextWrapping="Wrap" MaxWidth="250" Margin="0,6,0,10"
+                                   Text="Kalibriert im Hintergrund – einfach normal fahren und ein paar Kurven nehmen." />
+                        <DockPanel Margin="0,0,0,6">
+                            <Border DockPanel.Dock="Right" Style="{StaticResource Chip}" Tag="{Binding VelocityChip.Kind}">
+                                <TextBlock Style="{StaticResource ChipText}" Text="{Binding VelocityChip.Text}" />
+                            </Border>
+                            <TextBlock Style="{StaticResource BodyText}" Text="Tempo" VerticalAlignment="Center" />
+                        </DockPanel>
+                        <DockPanel Margin="0,0,0,6">
+                            <Border DockPanel.Dock="Right" Style="{StaticResource Chip}" Tag="{Binding PositionChip.Kind}">
+                                <TextBlock Style="{StaticResource ChipText}" Text="{Binding PositionChip.Text}" />
+                            </Border>
+                            <TextBlock Style="{StaticResource BodyText}" Text="Position" VerticalAlignment="Center" />
+                        </DockPanel>
+                        <DockPanel>
+                            <Border DockPanel.Dock="Right" Style="{StaticResource Chip}" Tag="{Binding OrientationChip.Kind}">
+                                <TextBlock Style="{StaticResource ChipText}" Text="{Binding OrientationChip.Text}" />
+                            </Border>
+                            <TextBlock Style="{StaticResource BodyText}" Text="Ausrichtung" VerticalAlignment="Center" />
+                        </DockPanel>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1" Margin="0,16,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="1.4*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Places -->
+            <Border Style="{StaticResource Card}">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Right" Style="{StaticResource BodyText}" FontSize="12" Text="{Binding PlacesSummary}" VerticalAlignment="Center" />
+                            <TextBlock Style="{StaticResource CardTitle}" Text="Ziele" />
+                        </DockPanel>
+                        <Border Style="{StaticResource Well}" Margin="0,12,0,12">
+                            <DockPanel>
+                                <Button DockPanel.Dock="Right" Style="{StaticResource PrimaryButton}" Command="{Binding JobTargetCommand}" Content="Zum Auftragsziel" />
+                                <TextBlock Text="&#xE819;" FontFamily="{StaticResource Icons}" FontSize="15" Foreground="{StaticResource Amber}"
+                                           VerticalAlignment="Center" Margin="0,0,10,0" />
+                                <TextBlock Style="{StaticResource BodyText}" Text="{Binding JobTargetText}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,12,0" />
+                            </DockPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <Button Style="{StaticResource GhostButton}" Command="{Binding TeleportPlaceCommand}" Margin="0,0,8,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE707;" FontFamily="{StaticResource Icons}" FontSize="15" Margin="0,0,10,0" VerticalAlignment="Center" />
+                                    <TextBlock Text="Hinteleportieren" />
+                                </StackPanel>
+                            </Button>
+                            <Button Style="{StaticResource ChipButton}" Command="{Binding DeletePlaceCommand}" Content="Löschen" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" Command="{Binding AddBookmarkCommand}" Content="Hier merken" Margin="8,0,0,0" />
+                            <TextBox Text="{Binding BookmarkName, UpdateSourceTrigger=PropertyChanged}" VerticalContentAlignment="Center"
+                                     AutomationProperties.Name="Name des Lesezeichens" ToolTip="Name für das Lesezeichen (optional)" />
+                        </DockPanel>
+                    </StackPanel>
+
+                    <DataGrid ItemsSource="{Binding Places}" SelectedItem="{Binding SelectedPlace}" MinHeight="120">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="ORT" Binding="{Binding Name}" Width="2*" />
+                            <DataGridTemplateColumn Header="ART" Width="*">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock VerticalAlignment="Center">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Text" Value="Lesezeichen" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Kind}" Value="Company">
+                                                            <Setter Property="Text" Value="Firma (gelernt)" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </Border>
+
+            <!-- Player codes -->
+            <Border Grid.Column="2" Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource CardTitle}" Text="Zu Mitspieler" />
+                    <TextBlock Style="{StaticResource BodyText}" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,14"
+                               Text="Im Konvoi: Code kopieren und z. B. per Discord schicken. Dein Mitspieler fügt ihn hier ein und landet direkt neben dir." />
+
+                    <TextBlock Style="{StaticResource Eyebrow}" Text="MEIN POSITIONS-CODE" />
+                    <DockPanel Margin="0,4,0,18">
+                        <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" Command="{Binding CopyCodeCommand}" Margin="8,0,0,0">
+                            <TextBlock Text="&#xE8C8;" FontFamily="{StaticResource Icons}" FontSize="15" />
+                        </Button>
+                        <TextBox Text="{Binding MyCode, Mode=OneWay}" IsReadOnly="True" VerticalContentAlignment="Center"
+                                 AutomationProperties.Name="Mein Positions-Code" />
+                    </DockPanel>
+
+                    <TextBlock Style="{StaticResource Eyebrow}" Text="CODE VOM MITSPIELER" />
+                    <TextBox Text="{Binding PastedCode, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,10" VerticalContentAlignment="Center"
+                             AutomationProperties.Name="Code vom Mitspieler" ToolTip="ETS2T:x;y;z;richtung" />
+                    <Button Style="{StaticResource PrimaryButton}" Command="{Binding TeleportCodeCommand}" HorizontalAlignment="Left">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE716;" FontFamily="{StaticResource Icons}" FontSize="15" Margin="0,0,10,0" VerticalAlignment="Center" />
+                            <TextBlock Text="Zum Mitspieler" />
+                        </StackPanel>
+                    </Button>
+
+                    <Rectangle Height="1" Fill="{StaticResource Line}" Margin="0,18,0,14" />
+                    <TextBlock Style="{StaticResource BodyText}" FontSize="12" TextWrapping="Wrap"
+                               Text="Firmen lernt der Trainer automatisch: beim Aufsatteln an der Startfirma und beim Abliefern am Ziel. Je mehr du fährst, desto mehr Ziele kannst du direkt anspringen." />
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>
