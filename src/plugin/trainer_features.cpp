@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdio>
 
+#include "cloud_storage.h"
 #include "log.h"
 #include "trainer.h"
 
@@ -20,8 +21,11 @@ constexpr float kMaxDeltaVPerFrame = 2.0f;     // m/s
 constexpr float kMinSpeedChange = 1.0e-4f;     // m/s, below: no write
 constexpr float kKmhPerMs = 3.6f;
 constexpr float kMaxSpeedCapKmh = 1000.0f;
-constexpr double kMaxRecalibrateMask = 15.0;
+constexpr double kMaxRecalibrateMask = 31.0;
 constexpr double kMaxTeleportCoordinate = 1.0e7;  // m
+constexpr double kTeleportLift = 0.4;             // m above the target, the truck settles
+constexpr std::uint32_t kTeleportHoldFrames = 20;
+constexpr std::uint32_t kMaxTeleportFailures = 10;  // frames
 constexpr std::size_t kTextBytes = 160;
 
 float sanitized(float value, float low, float high, float fallback) noexcept {
@@ -77,19 +81,43 @@ void Trainer::executeCommand(const TelemetryState& tel, const Control& control,
             setCommandMessage(u8"Neu-Kalibrierung gestartet", now);
             break;
         }
-        case CommandType::Teleport: startTeleport(tel, control, now); break;
+        case CommandType::Teleport: startTeleport(control, now); break;
         case CommandType::ResetAll:
             resetCalibrations(kRecalibrateAll);
             positionRequested_ = false;
             pendingRefuel_ = pendingRepair_ = pendingStop_ = pendingTeleport_ = false;
+            pendingUnflip_ = pendingReturn_ = false;
             setCommandMessage(u8"Alle Kalibrierungen zurückgesetzt", now);
             break;
+        case CommandType::Unflip:
+            pendingUnflip_ = true;
+            recoveryRequestedMs_ = now;
+            break;
+        case CommandType::ReturnToRoad:
+            pendingReturn_ = true;
+            recoveryRequestedMs_ = now;
+            break;
+        case CommandType::Jump: {
+            const double arg = control.commandArgs[0];
+            const double up = std::isfinite(arg) && arg > 0.0 && arg <= 40.0 ? arg : 9.0;
+            kick(tel, 0.0, up, u8"Sprung", now);
+            break;
+        }
+        case CommandType::Rocket: kick(tel, 25.0, 7.0, u8"Rakete", now); break;
+        case CommandType::BarrelRoll: startBarrelRoll(tel, now); break;
+        case CommandType::WriteSaveFiles: handleSaveWrite(control, now); break;
         default: setCommandMessage(u8"Unbekannter Befehl", now); break;
     }
 }
 
-void Trainer::startTeleport(const TelemetryState& tel, const Control& control,
-                            std::uint64_t now) {
+void Trainer::handleSaveWrite(const Control& control, std::uint64_t now) {
+    const cloud::WriteResult result = cloud::writeRequestedFiles();
+    saveWriteAck_ = control.commandSeq;
+    saveWriteResult_ = result.code;
+    setCommandMessage(result.message, now);
+}
+
+void Trainer::startTeleport(const Control& control, std::uint64_t now) {
     for (int i = 0; i < 3; ++i) {
         const double coordinate = control.commandArgs[i];
         if (!std::isfinite(coordinate) || std::fabs(coordinate) > kMaxTeleportCoordinate) {
@@ -98,10 +126,9 @@ void Trainer::startTeleport(const TelemetryState& tel, const Control& control,
         }
         teleportTarget_[i] = coordinate;
     }
-    if (tel.trailerConnected) {
-        setCommandMessage(u8"Teleport abgelehnt: bitte zuerst den Anhänger abkoppeln", now);
-        return;
-    }
+    const double heading = control.commandArgs[3];
+    teleportHasHeading_ = control.commandArgs[4] > 0.5 && std::isfinite(heading);
+    teleportHeading_ = teleportHasHeading_ ? static_cast<float>(heading - std::floor(heading)) : 0.0f;
     pendingTeleport_ = true;
     positionRequested_ = true;
     log::info("teleport requested to %.1f %.1f %.1f", teleportTarget_[0], teleportTarget_[1],
@@ -133,6 +160,11 @@ void Trainer::applyPending(const TelemetryState& tel, const CalibrationContext& 
     }
     if (pendingTeleport_) {
         applyPendingTeleport(tel, ctx, now);
+    }
+    if (positionRequested_ && !pendingTeleport_ && position_.isActive()) {
+        // Keep the confirmed addresses (re-validated before the next teleport) but stop
+        // driving the position calibrator, so e.g. a truck change does not trigger a scan.
+        positionRequested_ = false;
     }
 }
 
@@ -174,11 +206,6 @@ void Trainer::applyPendingStop(const CalibrationContext& ctx, std::uint64_t now)
 
 void Trainer::applyPendingTeleport(const TelemetryState& tel, const CalibrationContext& ctx,
                                    std::uint64_t now) {
-    if (tel.trailerConnected) {
-        pendingTeleport_ = false;
-        setCommandMessage(u8"Teleport abgebrochen: Anhänger angekoppelt", now);
-        return;
-    }
     if (position_.state() == FeatureState::Failed) {
         pendingTeleport_ = false;
         setCommandMessage(u8"Teleport fehlgeschlagen: Position nicht kalibrierbar", now);
@@ -187,11 +214,30 @@ void Trainer::applyPendingTeleport(const TelemetryState& tel, const CalibrationC
     if (!position_.isActive() || !ctx.testWritesAllowed) {
         return;  // keep waiting for the calibration / the end of the pause
     }
-    pendingTeleport_ = false;
+    if (teleportHasHeading_ && orientation_.isActive()) {
+        const double lifted[3] = {teleportTarget_[0], teleportTarget_[1] + kTeleportLift,
+                                  teleportTarget_[2]};
+        startHold(lifted, teleportHeading_, kTeleportHoldFrames);
+        pendingTeleport_ = false;
+        teleportFailures_ = 0;
+        setCommandMessage(tel.trailerConnected ? u8"Teleport ausgeführt – der Anhänger bleibt zurück"
+                                               : u8"Teleport ausgeführt",
+                          now);
+        return;
+    }
     if (!position_.teleport(teleportTarget_)) {
+        // Stored addresses went stale: validation drops them within a few frames and a new
+        // calibration starts; only give up if writing keeps failing while still "active".
+        if (++teleportFailures_ < kMaxTeleportFailures) {
+            return;
+        }
+        pendingTeleport_ = false;
+        teleportFailures_ = 0;
         setCommandMessage(u8"Teleport fehlgeschlagen: Positionsadresse ungültig", now);
         return;
     }
+    pendingTeleport_ = false;
+    teleportFailures_ = 0;
     if (velocity_.isActive() && ctx.velocityWritesAllowed) {
         velocity_.setMagnitude(0.0f);
     }

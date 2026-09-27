@@ -99,8 +99,12 @@ public sealed class BridgeClient : IDisposable
 
         return new StatusSnapshot(
             v.ReadUInt32(o + S.PluginBuild), heartbeat,
-            ReadFeature(v, o + S.Fuel), ReadFeature(v, o + S.Wear), ReadFeature(v, o + S.Velocity), ReadFeature(v, o + S.Position),
-            v.ReadUInt32(o + S.LastCommandAck), (ActiveFlags)v.ReadUInt32(o + S.ActiveFlags), v.ReadUInt32(o + S.MenuToggleCount),
+            ReadFeature(v, o + S.Fuel), ReadFeature(v, o + S.Wear), ReadFeature(v, o + S.Velocity),
+            ReadFeature(v, o + S.Position), ReadFeature(v, o + S.Orientation),
+            v.ReadUInt32(o + S.LastCommandAck), (ActiveFlags)v.ReadUInt32(o + S.ActiveFlags),
+            v.ReadUInt32(o + S.MenuToggleCount), (Capabilities)v.ReadUInt32(o + S.Capabilities),
+            v.ReadUInt32(o + S.BreadcrumbCount), v.ReadUInt32(o + S.JobStartedCount),
+            v.ReadUInt32(o + S.JobDeliveredCount), v.ReadUInt32(o + S.SaveWriteAck), v.ReadInt32(o + S.SaveWriteResult),
             ReadString(v, o + S.Message, S.MessageLength));
     }
 
@@ -123,6 +127,15 @@ public sealed class BridgeClient : IDisposable
         v.Write(o + C.SpeedCapEnabled, state.SpeedCapEnabled ? 1u : 0u);
         v.Write(o + C.SpeedCapKmh, state.SpeedCapKmh);
         v.Write(o + C.MenuHotkeyVk, state.MenuHotkeyVk);
+        v.Write(o + C.PrepareMotion, state.PrepareMotion ? 1u : 0u);
+        v.Write(o + C.FunFlags, (uint)state.Fun);
+        v.Write(o + C.MoonGravity, state.MoonGravity);
+        v.Write(o + C.SpinTurns, state.SpinTurnsPerSecond);
+        v.Write(o + C.JumpVk, state.JumpVk);
+        v.Write(o + C.RocketVk, state.RocketVk);
+        v.Write(o + C.RollVk, state.RollVk);
+        v.Write(o + C.HoverVk, state.HoverVk);
+        v.Write(o + C.UnflipVk, state.UnflipVk);
         v.Write(o + C.AppHeartbeat, unchecked(++_appHeartbeat));
     }
 
@@ -152,7 +165,7 @@ public sealed class BridgeClient : IDisposable
     private static TelemetrySnapshot ReadTelemetryFields(MemoryMappedViewAccessor v, int o) => new(
         v.ReadUInt32(o + T.FrameCounter), v.ReadUInt32(o + T.GameVersion), (TelemetryFlags)v.ReadUInt32(o + T.Flags),
         v.ReadDouble(o + T.PosX), v.ReadDouble(o + T.PosY), v.ReadDouble(o + T.PosZ), v.ReadSingle(o + T.Heading),
-        v.ReadSingle(o + T.Speed), v.ReadSingle(o + T.Rpm), v.ReadSingle(o + T.RpmMax), v.ReadInt32(o + T.Gear),
+        v.ReadSingle(o + T.Pitch), v.ReadSingle(o + T.Roll), v.ReadSingle(o + T.Speed), v.ReadSingle(o + T.Rpm), v.ReadSingle(o + T.RpmMax), v.ReadInt32(o + T.Gear),
         v.ReadSingle(o + T.EffThrottle), v.ReadSingle(o + T.EffBrake), v.ReadSingle(o + T.Fuel), v.ReadSingle(o + T.FuelCapacity),
         v.ReadSingle(o + T.FuelRange), v.ReadSingle(o + T.WearEngine), v.ReadSingle(o + T.WearTransmission),
         v.ReadSingle(o + T.WearCabin), v.ReadSingle(o + T.WearChassis), v.ReadSingle(o + T.WearWheels),
@@ -160,7 +173,9 @@ public sealed class BridgeClient : IDisposable
         v.ReadSingle(o + T.CruiseControl), v.ReadSingle(o + T.Odometer), v.ReadUInt32(o + T.GameTimeMin),
         ReadString(v, o + T.TruckBrand, T.TruckBrandLength), ReadString(v, o + T.TruckName, T.TruckNameLength),
         ReadString(v, o + T.TruckId, T.TruckIdLength), ReadString(v, o + T.Cargo, T.CargoLength),
-        ReadString(v, o + T.DestinationCity, T.DestinationCityLength));
+        ReadString(v, o + T.DestinationCity, T.DestinationCityLength),
+        ReadString(v, o + T.DestinationCityId, T.IdLength), ReadString(v, o + T.DestinationCompanyId, T.IdLength),
+        ReadString(v, o + T.SourceCityId, T.IdLength), ReadString(v, o + T.SourceCompanyId, T.IdLength));
 
     private static FeatureStatus ReadFeature(MemoryMappedViewAccessor v, int offset) => new(
         (FeatureState)v.ReadUInt32(offset), v.ReadUInt32(offset + 4), v.ReadUInt32(offset + 8), v.ReadSingle(offset + 12));

@@ -1,9 +1,13 @@
 // Trainer frame orchestration, safety gates and batched scanning.
 #include "trainer.h"
 
+#include <algorithm>
 #include <array>
 #include <cstring>
+#include <memory>
+#include <utility>
 
+#include "input_device.h"
 #include "log.h"
 #include "text_util.h"
 
@@ -73,6 +77,13 @@ Trainer::Trainer(Platform& platform) noexcept
             ScalarCalibrator(kWearConfigs[4]), ScalarCalibrator(kWearConfigs[5]),
             ScalarCalibrator(kWearConfigs[6])} {}
 
+Trainer::~Trainer() { shutdown(); }
+
+void Trainer::shutdown() noexcept {
+    discardScan();
+    input::releaseAll();
+}
+
 void Trainer::onFrameEnd(const TelemetryState& tel, const Control& control, Status& status) {
     ++frame_;
     ++heartbeat_;
@@ -87,16 +98,28 @@ void Trainer::onFrameEnd(const TelemetryState& tel, const Control& control, Stat
         lastCommandSeq_ = control.commandSeq;  // never replay a command from a previous session
         commandResyncPending_ = false;
     }
-    const bool newCommand = control.commandSeq != lastCommandSeq_;
+    bool newCommand = control.commandSeq != lastCommandSeq_;
     lastCommandSeq_ = control.commandSeq;
+
+    // Saves can be written from the main menu (no truck yet); everything else needs the gate.
+    const bool saveCommand = newCommand && static_cast<CommandType>(control.commandType) ==
+                                               CommandType::WriteSaveFiles;
+    if (saveCommand && gate != Gate::TruckersMp && gate != Gate::AppStale) {
+        handleSaveWrite(control, now);
+        newCommand = false;
+    }
 
     activeFlags_ = 0;
     if (gate == Gate::Open) {
         runFrame(tel, control, newCommand, now);
-    } else if (newCommand) {
-        setCommandMessage("Befehl abgelehnt: Trainer ist blockiert", now);
+    } else {
+        if (newCommand) {
+            setCommandMessage("Befehl abgelehnt: Trainer ist blockiert", now);
+        }
+        stopInputShow();
     }
     fillStatus(control, gate, now, status);
+    fillExtendedStatus(tel, control, gate, status);
 }
 
 void Trainer::checkTruckersMpNow() noexcept {
@@ -190,6 +213,7 @@ void Trainer::runFrame(const TelemetryState& tel, const Control& control, bool n
     applyFuel(tel, control);
     applyNoDamage(tel, control);
     applyVelocity(tel, control, ctx);
+    updateMotion(tel, control, ctx, now);
 }
 
 CalibrationContext Trainer::makeContext(const TelemetryState& tel,
@@ -208,9 +232,13 @@ void Trainer::updateRequests(const Control& control) {
     for (ScalarCalibrator& wear : wear_) {
         wear.setRequested(control.noDamage != 0);
     }
+    constexpr std::uint32_t kPhysicsFun = kFunMoonGravity | kFunAnchor | kFunSpin | kFunAutoUpright;
+    const bool motion = control.prepareMotion != 0 || (control.funFlags & kPhysicsFun) != 0 ||
+                        pendingUnflip_ || pendingReturn_;
     velocity_.setRequested(control.powerBoost != 0 || control.nitroEnabled != 0 ||
-                           control.speedCapEnabled != 0);
-    position_.setRequested(positionRequested_);
+                           control.speedCapEnabled != 0 || motion);
+    position_.setRequested(positionRequested_ || motion);
+    orientation_.setRequested(motion);
 }
 
 void Trainer::updateCalibrators(const TelemetryState& tel, const CalibrationContext& ctx) {
@@ -225,15 +253,34 @@ void Trainer::updateCalibrators(const TelemetryState& tel, const CalibrationCont
     for (int i = 0; i < 3; ++i) {
         position.pos[i] = tel.pos[i];
     }
+    position.speed = bodySpeed(tel);
     position.available = true;
     position_.update(position, ctx);
+    OrientationInput orientation;
+    orientation.heading = tel.heading;
+    orientation.pitch = tel.pitch;
+    orientation.roll = tel.roll;
+    orientation.anchors = &position_.confirmed();
+    orientation.available = position_.isActive() && script_.kind == MotionScript::Kind::None;
+    orientation_.update(orientation, ctx);
 }
 
+// One batched scan at a time. It runs on a background thread (the game keeps running) while
+// every participating calibrator widens its live bounds each frame; results are delivered on
+// the game thread, where the calibrators immediately filter them against the current values.
 void Trainer::runBatchedScan(std::uint64_t now) {
+    if (asyncScan_.running()) {
+        pollScan();
+        return;
+    }
     if (hasScanned_ && now - lastScanMs_ < kMinScanIntervalMs) {
         return;
     }
-    std::array<ScanClient*, kWearChannelCount + 3> clients{};
+    startScan(now);
+}
+
+void Trainer::startScan(std::uint64_t now) {
+    std::array<ScanClient*, kScanClientCount> clients{};
     std::size_t clientCount = 0;
     clients[clientCount++] = &fuel_;
     for (ScalarCalibrator& wear : wear_) {
@@ -242,41 +289,99 @@ void Trainer::runBatchedScan(std::uint64_t now) {
     clients[clientCount++] = &velocity_;
     clients[clientCount++] = &position_;
 
-    struct Slice {
-        ScanClient* client;
-        std::size_t first;
-        std::size_t count;
-    };
     std::vector<mem::ScanTarget> targets;
-    std::vector<Slice> slices;
-    for (ScanClient* client : clients) {
-        if (client->wantsScan()) {
+    scanSlices_.clear();
+    for (std::size_t i = 0; i < clientCount; ++i) {
+        ScanClient* client = clients[i];
+        if (!client->scanning() && client->wantsScan()) {
             const std::size_t first = targets.size();
             client->appendScanTargets(targets);
-            slices.push_back({client, first, targets.size() - first});
+            scanSlices_.push_back({client, first, targets.size() - first});
         }
     }
-    if (slices.empty()) {
+    if (scanSlices_.empty()) {
         return;
     }
     lastScanMs_ = now;  // rate-limit even if the scan throws
     hasScanned_ = true;
-    mem::ScanStats stats;
-    const std::vector<mem::ScanResult> results = mem::scanProcess(targets, &stats);
-    log::info("scan: %zu targets / %zu calibrators, %zu regions, %.1f MiB, %u threads, "
-              "%zu faults, %.1f ms",
-              targets.size(), slices.size(), stats.regions,
-              static_cast<double>(stats.bytes) / kBytesPerMiB, stats.threads, stats.faults,
-              stats.milliseconds);
-    if (results.size() != targets.size()) {
+    auto bounds = std::make_unique<mem::LiveBounds[]>(targets.size());
+    for (std::size_t i = 0; i < targets.size(); ++i) {
+        if (targets[i].usesBounds()) {
+            mem::initLiveBounds(targets[i], bounds[i]);
+            targets[i].live = &bounds[i];
+        }
+    }
+    if (synchronousScans_) {
+        mem::ScanStats stats;
+        const std::vector<mem::ScanResult> results = mem::scanProcess(targets, &stats);
+        deliverScan(results, stats);
         return;
     }
-    for (const Slice& slice : slices) {
-        slice.client->onScanResults(results.data() + slice.first, slice.count);
+    const std::size_t targetCount = targets.size();
+    if (!asyncScan_.start(std::move(targets), std::move(bounds), mem::backgroundWorkerCount())) {
+        log::warn("scan: background thread could not be started");
+        scanSlices_.clear();
+        return;
+    }
+    for (const ScanSlice& slice : scanSlices_) {
+        slice.client->markScanStarted();
+    }
+    log::info("scan: started in background (%zu targets / %zu calibrators)", targetCount,
+              scanSlices_.size());
+}
+
+void Trainer::pollScan() {
+    if (!asyncScan_.done()) {
+        mem::LiveBounds* bounds = asyncScan_.bounds();
+        for (const ScanSlice& slice : scanSlices_) {
+            slice.client->widenScanTargets(bounds + slice.first, slice.count);
+        }
+        return;
+    }
+    mem::ScanStats stats;
+    const std::vector<mem::ScanResult> results = asyncScan_.take(stats);
+    deliverScan(results, stats);
+}
+
+void Trainer::deliverScan(const std::vector<mem::ScanResult>& results,
+                          const mem::ScanStats& stats) {
+    std::size_t expected = 0;
+    for (const ScanSlice& slice : scanSlices_) {
+        expected = std::max(expected, slice.first + slice.count);
+    }
+    log::info("scan: %zu calibrators, %zu regions, %.1f MiB, %u threads, %zu faults, %.1f ms%s",
+              scanSlices_.size(), stats.regions, static_cast<double>(stats.bytes) / kBytesPerMiB,
+              stats.threads, stats.faults, stats.milliseconds, stats.cancelled ? " (cancelled)" : "");
+    const std::vector<ScanSlice> slices = std::move(scanSlices_);
+    scanSlices_.clear();
+    for (const ScanSlice& slice : slices) {
+        if (results.size() >= expected && !stats.cancelled) {
+            slice.client->deliverScanResults(results.data() + slice.first, slice.count);
+        } else {
+            slice.client->abandonScan();
+        }
     }
 }
 
+void Trainer::discardScan() noexcept {
+    asyncScan_.cancel();
+    for (const ScanSlice& slice : scanSlices_) {
+        slice.client->abandonScan();
+    }
+    scanSlices_.clear();
+}
+
 void Trainer::resetCalibrations(std::uint32_t mask) {
+    discardScan();  // its results would belong to the old objects
+    if ((mask & (kRecalibratePosition | kRecalibrateOrientation)) != 0) {
+        orientation_.reset();  // anchored to the position addresses
+        script_ = MotionScript{};
+        anchorActive_ = false;
+    }
+    if ((mask & kRecalibratePosition) != 0) {
+        crumbCount_ = 0;
+        crumbHead_ = 0;
+    }
     if ((mask & kRecalibrateFuel) != 0) {
         fuel_.reset();
     }

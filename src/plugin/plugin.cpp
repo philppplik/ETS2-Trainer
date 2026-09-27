@@ -7,6 +7,7 @@
 #include <optional>
 
 #include "bridge.h"
+#include "input_device.h"
 #include "log.h"
 #include "platform.h"
 #include "plugin_telemetry.h"
@@ -68,6 +69,9 @@ void onFrameEnd() {
 
 void onGameplayEvent(const scs::GameplayEvent& event) {
     log::info("gameplay event: %s", event.id != nullptr ? event.id : "?");
+    if (event.id != nullptr && std::strcmp(event.id, scs::gameplay::kJobDelivered) == 0) {
+        ++g_state.jobDeliveredCount;  // the app learns the target company's position now
+    }
 }
 
 void E2T_SCSAPI eventCallback(scs::event_t event, const void* info, scs::context_t) {
@@ -211,3 +215,23 @@ extern "C" void E2T_SCSAPI scs_telemetry_shutdown(void) {
     }
     log::shutdown();
 }
+
+// ---- input SDK: virtual device for the light / horn / suspension tricks ---------------------
+
+extern "C" scs::result_t E2T_SCSAPI scs_input_init(scs::u32 version,
+                                                   const scs::InputInitParams* params) {
+    if (version != scs::kInputVersion_1_00) {
+        return scs::kResultUnsupported;
+    }
+    if (params == nullptr) {
+        return scs::kResultInvalidParameter;
+    }
+    try {
+        const auto& v100 = *static_cast<const scs::InputInitParamsV100*>(params);
+        return e2t::input::registerDevice(v100) ? scs::kResultOk : scs::kResultGenericError;
+    } catch (...) {
+        return scs::kResultGenericError;
+    }
+}
+
+extern "C" void E2T_SCSAPI scs_input_shutdown(void) { e2t::input::unregisterDevice(); }

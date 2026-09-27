@@ -21,10 +21,10 @@ public partial class App : Application
             args.Handled = true;
         };
 
-        var window = new MainWindow();
+        var screenshotIndex = Array.IndexOf(e.Args, "--screenshot");
+        var window = new MainWindow(offline: screenshotIndex >= 0);  // screenshots never touch a running game
         MainWindow = window;
 
-        var screenshotIndex = Array.IndexOf(e.Args, "--screenshot");
         if (screenshotIndex >= 0 && screenshotIndex + 1 < e.Args.Length)
         {
             _ = CaptureScreenshotsAsync(window, e.Args[screenshotIndex + 1], e.Args.Contains("--load"));
@@ -59,6 +59,7 @@ public partial class App : Application
         {
             vm.CurrentSection = section;
             await Task.Delay(section == Section.Workshop ? ScreenshotSettleTime * 8 : ScreenshotSettleTime);
+            vm.DismissToastCommand.Execute(null);
             await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
             SaveVisual(window, Path.Combine(directory, $"{(int)section}_{section}.png"));
         }

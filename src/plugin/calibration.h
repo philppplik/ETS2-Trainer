@@ -31,11 +31,26 @@ public:
     virtual bool wantsScan() const noexcept = 0;
     virtual void appendScanTargets(std::vector<mem::ScanTarget>& targets) const = 0;
     virtual void onScanResults(const mem::ScanResult* results, std::size_t count) = 0;
+    // Called every frame while a background scan for this client runs: widen bounds[0..count)
+    // (one per appended target) so they include the current telemetry value(s).
+    virtual void widenScanTargets(mem::LiveBounds* /*bounds*/, std::size_t /*count*/) const {}
+
+    // Background-scan bookkeeping (driven by the trainer).
+    bool scanning() const noexcept { return scanning_; }
+    void markScanStarted() noexcept { scanning_ = true; }
+    void abandonScan() noexcept { scanning_ = false; }
+    void deliverScanResults(const mem::ScanResult* results, std::size_t count) {
+        scanning_ = false;
+        onScanResults(results, count);
+    }
 
 protected:
     ScanClient() = default;
     ScanClient(const ScanClient&) = default;
     ScanClient& operator=(const ScanClient&) = default;
+
+private:
+    bool scanning_ = false;
 };
 
 float calibrationProgress(FeatureState state, float searchFraction, float verifyFraction) noexcept;
@@ -83,6 +98,7 @@ public:
     bool wantsScan() const noexcept override;
     void appendScanTargets(std::vector<mem::ScanTarget>& targets) const override;
     void onScanResults(const mem::ScanResult* results, std::size_t count) override;
+    void widenScanTargets(mem::LiveBounds* bounds, std::size_t count) const override;
 
 private:
     void filterCandidates();
@@ -102,6 +118,7 @@ private:
     bool available_ = false;
     float value_ = 0.0f;
     std::uint32_t valueBits_ = 0;
+    float lastDelta_ = 0.0f;  // |change| of the last frame: predicts values during a scan
     float limit_ = 0.0f;
     std::vector<ScalarCandidate> candidates_;
     std::vector<ScalarCandidate> confirmed_;
@@ -142,6 +159,10 @@ public:
     void update(const VelocityInput& input, const CalibrationContext& ctx);
     // Scales every validated confirmed vector v to magnitude m (v * m / |v|); m = 0 stops.
     bool setMagnitude(float magnitude);
+    // Adds delta (m/s, in the vectors' own space) to every validated confirmed vector.
+    bool addDelta(const double (&delta)[3]);
+    // First validated confirmed vector (for direction/space detection).
+    bool readFirst(double (&out)[3]) const;
 
     bool requested() const noexcept { return requested_; }
     bool isActive() const noexcept { return state_ == FeatureState::Active; }
@@ -156,8 +177,12 @@ public:
     bool wantsScan() const noexcept override;
     void appendScanTargets(std::vector<mem::ScanTarget>& targets) const override;
     void onScanResults(const mem::ScanResult* results, std::size_t count) override;
+    void widenScanTargets(mem::LiveBounds* bounds, std::size_t count) const override;
 
 private:
+    bool isValidNow(const VectorCandidate& candidate, double (&v)[3]) const noexcept;
+    void removeOverlapping();
+    void dropSelfReferences();
     struct SavedVector {
         std::uintptr_t address;
         VectorEncoding encoding;
@@ -212,6 +237,7 @@ struct PositionCandidate {
 
 struct PositionInput {
     double pos[3] = {0.0, 0.0, 0.0};
+    float speed = 0.0f;  // m/s, widens the match tolerance while moving
     bool available = false;
 };
 
@@ -220,8 +246,10 @@ public:
     void setRequested(bool requested);
     void reset();
     void update(const PositionInput& input, const CalibrationContext& ctx);
-    // Writes the target to every confirmed triple that still equals the telemetry position.
+    // Writes the target to every confirmed triple that still matches the telemetry position.
     bool teleport(const double (&target)[3]);
+    // Moves every confirmed triple by delta (e.g. lift when putting the truck upright).
+    bool nudge(const double (&delta)[3]);
 
     bool requested() const noexcept { return requested_; }
     bool isActive() const noexcept { return state_ == FeatureState::Active; }
@@ -236,8 +264,10 @@ public:
     bool wantsScan() const noexcept override;
     void appendScanTargets(std::vector<mem::ScanTarget>& targets) const override;
     void onScanResults(const mem::ScanResult* results, std::size_t count) override;
+    void widenScanTargets(mem::LiveBounds* bounds, std::size_t count) const override;
 
 private:
+    double tolerance() const noexcept;
     bool matchesTelemetry(std::uintptr_t address) const noexcept;
     void filterCandidates();
     void stepVerification(const CalibrationContext& ctx);
@@ -252,6 +282,7 @@ private:
     bool requested_ = false;
     bool available_ = false;
     double pos_[3] = {0.0, 0.0, 0.0};
+    float speed_ = 0.0f;
     std::vector<PositionCandidate> candidates_;
     std::vector<PositionCandidate> confirmed_;
     std::uint32_t retries_ = 0;

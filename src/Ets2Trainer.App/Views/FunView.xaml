@@ -1,0 +1,176 @@
+<UserControl x:Class="Ets2Trainer.App.Views.FunView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Hero: stunts -->
+        <Border CornerRadius="16" Padding="30,24" Background="{StaticResource HeroGlow}" BorderBrush="{StaticResource Line}" BorderThickness="1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Style="{StaticResource Eyebrow}" Text="STUNTS" />
+                    <TextBlock Style="{StaticResource CardTitle}" FontSize="26" Text="Sorg für „WTF?!“ im Konvoi" />
+                    <TextBlock Style="{StaticResource BodyText}" Margin="0,4,0,16" TextWrapping="Wrap" MaxWidth="560" HorizontalAlignment="Left"
+                               Text="Deine Mitfahrer sehen jede Bewegung deines Trucks. Sprung, Rakete und Fassrolle gehen per Klick oder Hotkey – auch mitten in der Fahrt." />
+                    <StackPanel Orientation="Horizontal">
+                        <Button Style="{StaticResource PrimaryButton}" Command="{Binding JumpCommand}" Margin="0,0,10,0">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE70E;" FontFamily="{StaticResource Icons}" FontSize="15" Margin="0,0,10,0" VerticalAlignment="Center" />
+                                <TextBlock Text="Sprung" />
+                            </StackPanel>
+                        </Button>
+                        <Button Style="{StaticResource GhostButton}" Command="{Binding RocketCommand}" Margin="0,0,10,0">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE709;" FontFamily="{StaticResource Icons}" FontSize="15" Margin="0,0,10,0" VerticalAlignment="Center" />
+                                <TextBlock Text="Rakete" />
+                            </StackPanel>
+                        </Button>
+                        <Button Style="{StaticResource GhostButton}" Command="{Binding RollCommand}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE7AD;" FontFamily="{StaticResource Icons}" FontSize="15" Margin="0,0,10,0" VerticalAlignment="Center" />
+                                <TextBlock Text="Fassrolle" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                    <TextBlock Style="{StaticResource BodyText}" FontSize="12" Margin="0,12,0,0" TextWrapping="Wrap" Text="{Binding KeyText}" />
+                </StackPanel>
+
+                <Border Grid.Column="1" Style="{StaticResource Well}" MinWidth="250" VerticalAlignment="Top">
+                    <StackPanel>
+                        <DockPanel>
+                            <CheckBox DockPanel.Dock="Right" Style="{StaticResource Switch}" IsChecked="{Binding Motion.PrepareMotion}"
+                                      AutomationProperties.Name="Bewegung vorbereiten" />
+                            <TextBlock Style="{StaticResource Eyebrow}" Text="BEWEGUNG VORBEREITEN" VerticalAlignment="Center" Margin="0" />
+                        </DockPanel>
+                        <TextBlock Style="{StaticResource BodyText}" FontSize="12" TextWrapping="Wrap" MaxWidth="250" Margin="0,6,0,10"
+                                   Text="Einmal einschalten und losfahren. Sobald alles grün ist, klappen die Stunts sofort." />
+                        <DockPanel Margin="0,0,0,6">
+                            <Border DockPanel.Dock="Right" Style="{StaticResource Chip}" Tag="{Binding Motion.VelocityChip.Kind}">
+                                <TextBlock Style="{StaticResource ChipText}" Text="{Binding Motion.VelocityChip.Text}" />
+                            </Border>
+                            <TextBlock Style="{StaticResource BodyText}" Text="Tempo" VerticalAlignment="Center" />
+                        </DockPanel>
+                        <DockPanel>
+                            <Border DockPanel.Dock="Right" Style="{StaticResource Chip}" Tag="{Binding Motion.OrientationChip.Kind}">
+                                <TextBlock Style="{StaticResource ChipText}" Text="{Binding Motion.OrientationChip.Text}" />
+                            </Border>
+                            <TextBlock Style="{StaticResource BodyText}" Text="Ausrichtung" VerticalAlignment="Center" />
+                        </DockPanel>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- Physics toys -->
+        <Grid Grid.Row="1" Margin="0,16,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <DockPanel>
+                        <CheckBox DockPanel.Dock="Right" Style="{StaticResource Switch}" IsChecked="{Binding MoonOn}" AutomationProperties.Name="Mond-Schwerkraft" />
+                        <TextBlock Style="{StaticResource CardTitle}" Text="Mond" />
+                    </DockPanel>
+                    <TextBlock Style="{StaticResource Numeric}" Text="{Binding MoonText}" FontSize="20" Foreground="{StaticResource Amber}" Margin="0,8,0,0" />
+                    <Slider Minimum="0" Maximum="1" SmallChange="0.05" LargeChange="0.1" Value="{Binding MoonGravity}" Margin="0,4,0,6"
+                            AutomationProperties.Name="Stärke Mond-Schwerkraft" />
+                    <TextBlock Style="{StaticResource BodyText}" FontSize="12" TextWrapping="Wrap" Text="Weniger Schwerkraft – Kuppen werden zu Schanzen." />
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="2" Style="{StaticResource Card}">
+                <StackPanel>
+                    <DockPanel>
+                        <CheckBox DockPanel.Dock="Right" Style="{StaticResource Switch}" IsChecked="{Binding SpinOn}" AutomationProperties.Name="Kreisel" />
+                        <TextBlock Style="{StaticResource CardTitle}" Text="Kreisel" />
+                    </DockPanel>
+                    <TextBlock Style="{StaticResource Numeric}" Text="{Binding SpinText}" FontSize="20" Foreground="{StaticResource Amber}" Margin="0,8,0,0" />
+                    <Slider Minimum="-3" Maximum="3" SmallChange="0.1" LargeChange="0.5" Value="{Binding SpinSpeed}" Margin="0,4,0,6"
+                            AutomationProperties.Name="Kreisel-Tempo" />
+                    <TextBlock Style="{StaticResource BodyText}" FontSize="12" TextWrapping="Wrap" Text="Dreht den Truck um die eigene Achse. Negativ = andersrum." />
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="4" Style="{StaticResource Card}">
+                <StackPanel>
+                    <DockPanel>
+                        <CheckBox DockPanel.Dock="Right" Style="{StaticResource Switch}" IsChecked="{Binding AnchorOn}" AutomationProperties.Name="Anker" />
+                        <TextBlock Style="{StaticResource CardTitle}" Text="Anker" />
+                    </DockPanel>
+                    <TextBlock Style="{StaticResource BodyText}" FontSize="12" TextWrapping="Wrap" Margin="0,10,0,0"
+                               Text="Friert den Truck an Ort und Stelle ein – Vollgas, und er bewegt sich keinen Meter. Rammen zwecklos." />
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="6" Style="{StaticResource Card}">
+                <StackPanel>
+                    <DockPanel>
+                        <CheckBox DockPanel.Dock="Right" Style="{StaticResource Switch}" IsChecked="{Binding AutoUprightOn}" AutomationProperties.Name="Stehaufmännchen" />
+                        <TextBlock Style="{StaticResource CardTitle}" Text="Stehauf" />
+                    </DockPanel>
+                    <TextBlock Style="{StaticResource BodyText}" FontSize="12" TextWrapping="Wrap" Margin="0,10,0,0"
+                               Text="Stehaufmännchen: liegt der Truck gut 1,5 Sekunden auf der Seite, richtet er sich von selbst wieder auf." />
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Light and horn show -->
+        <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0,16,0,0" VerticalAlignment="Top">
+            <DockPanel>
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,14">
+                    <TextBlock DockPanel.Dock="Right" Style="{StaticResource BodyText}" FontSize="12" Text="{Binding InputText}" VerticalAlignment="Center" />
+                    <TextBlock Style="{StaticResource CardTitle}" Text="Licht- &amp; Hupen-Show" />
+                </DockPanel>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="28" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="28" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <DockPanel>
+                            <CheckBox DockPanel.Dock="Right" Style="{StaticResource Switch}" IsChecked="{Binding DiscoOn}" AutomationProperties.Name="Disco" />
+                            <TextBlock Style="{StaticResource Eyebrow}" Text="DISCO" VerticalAlignment="Center" Margin="0" />
+                        </DockPanel>
+                        <TextBlock Style="{StaticResource BodyText}" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0"
+                                   Text="Rundumleuchte, Fernlicht-Stroboskop und Warnblinker im Takt." />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <DockPanel>
+                            <CheckBox DockPanel.Dock="Right" Style="{StaticResource Switch}" IsChecked="{Binding HornOn}" AutomationProperties.Name="Hupkonzert" />
+                            <TextBlock Style="{StaticResource Eyebrow}" Text="HUPKONZERT" VerticalAlignment="Center" Margin="0" />
+                        </DockPanel>
+                        <TextBlock Style="{StaticResource BodyText}" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0"
+                                   Text="Spielt ein Hupmuster mit Hupe und Drucklufthorn." />
+                    </StackPanel>
+                    <StackPanel Grid.Column="4">
+                        <DockPanel>
+                            <CheckBox DockPanel.Dock="Right" Style="{StaticResource Switch}" IsChecked="{Binding LowriderOn}" AutomationProperties.Name="Lowrider" />
+                            <TextBlock Style="{StaticResource Eyebrow}" Text="LOWRIDER" VerticalAlignment="Center" Margin="0" />
+                        </DockPanel>
+                        <TextBlock Style="{StaticResource BodyText}" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0"
+                                   Text="Lässt die Luftfederung vorne und hinten abwechselnd hüpfen (nur Trucks mit Luftfederung)." />
+                    </StackPanel>
+                </Grid>
+            </DockPanel>
+        </Border>
+    </Grid>
+</UserControl>

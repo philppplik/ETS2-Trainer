@@ -102,6 +102,28 @@ public static class SaveSlotService
         return target;
     }
 
+    /// <summary>
+    /// Updates info.sii for writing and returns the target slot folder name without touching the
+    /// disk (Steam-Cloud profiles are written by the plugin). Idempotent.
+    /// </summary>
+    public static string PrepareForWrite(LoadedSave save, SaveWriteMode mode)
+    {
+        UpdateInfo(save);
+        if (mode == SaveWriteMode.OverwriteWithBackup)
+        {
+            return save.Slot.FolderName;
+        }
+
+        RenameInfo(save.Info, save.Slot.Name);
+        var saveRoot = Path.GetDirectoryName(save.Slot.Directory)!;
+        var used = Directory.GetDirectories(saveRoot)
+            .Select(Path.GetFileName)
+            .Select(n => int.TryParse(n, NumberStyles.None, CultureInfo.InvariantCulture, out var i) ? i : 0)
+            .DefaultIfEmpty(0)
+            .Max();
+        return (used + 1).ToString(CultureInfo.InvariantCulture);
+    }
+
     /// <summary>Adds a mod dependency to info.sii so the game warns if the mod is disabled.</summary>
     public static void AddModDependency(SiiDocument info, string packageName, string displayName)
     {

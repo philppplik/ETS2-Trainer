@@ -6,6 +6,7 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -22,8 +23,39 @@ enum class ScanKind : std::uint8_t {
     FloatBits,              // 4-byte aligned float, exact bit pattern
     DoubleRoundingToFloat,  // 8-byte aligned double d with (float)d == target
     DoubleTripleBits,       // 8-byte aligned double[3], exact bit patterns
-    FloatTripleMagnitude,   // 4-byte aligned float[3] with |v|^2 in [min, max]
-    DoubleTripleMagnitude,  // 8-byte aligned double[3] with |v|^2 in [min, max]
+    FloatTripleMagnitude,   // 4-byte aligned float[3] with |v| in [lo, hi]
+    DoubleTripleMagnitude,  // 8-byte aligned double[3] with |v| in [lo, hi]
+    FloatRange,             // 4-byte aligned float in [lo, hi]
+    DoubleRange,            // 8-byte aligned double in [lo, hi]
+    DoubleTripleBox,        // 8-byte aligned double[3] inside the box lo[i]..hi[i]
+};
+
+// Bounds that the game thread widens every frame while a background scan runs, so values that
+// change during the scan (speed, fuel, position) are still found. Single writer (game thread),
+// many readers (scan workers load them once per 64 KiB chunk).
+struct LiveBounds {
+    std::atomic<double> lo[3];
+    std::atomic<double> hi[3];
+
+    LiveBounds() noexcept {
+        for (int i = 0; i < 3; ++i) {
+            lo[i].store(0.0, std::memory_order_relaxed);
+            hi[i].store(0.0, std::memory_order_relaxed);
+        }
+    }
+    void set(int axis, double low, double high) noexcept {
+        lo[axis].store(low, std::memory_order_relaxed);
+        hi[axis].store(high, std::memory_order_relaxed);
+    }
+    // Grows [lo, hi] to include [low, high]; never shrinks.
+    void widen(int axis, double low, double high) noexcept {
+        if (low < lo[axis].load(std::memory_order_relaxed)) {
+            lo[axis].store(low, std::memory_order_relaxed);
+        }
+        if (high > hi[axis].load(std::memory_order_relaxed)) {
+            hi[axis].store(high, std::memory_order_relaxed);
+        }
+    }
 };
 
 struct ScanTarget {
@@ -31,8 +63,9 @@ struct ScanTarget {
     std::uint32_t floatBits = 0;
     DoubleRange doubleRange{};
     std::uint64_t tripleBits[3] = {0, 0, 0};
-    double minMagnitudeSq = 0.0;
-    double maxMagnitudeSq = 0.0;
+    double lo[3] = {0.0, 0.0, 0.0};  // range/box/magnitude bounds (magnitudes, not squared)
+    double hi[3] = {0.0, 0.0, 0.0};
+    const LiveBounds* live = nullptr;  // overrides lo/hi when set (range kinds only)
     std::size_t maxHits = kDefaultMaxHitsPerTarget;
 
     static ScanTarget exactFloat(float value) noexcept;
@@ -40,7 +73,15 @@ struct ScanTarget {
     static ScanTarget exactDoubleTriple(const double (&xyz)[3]) noexcept;
     static ScanTarget floatTripleMagnitude(double minMagnitude, double maxMagnitude) noexcept;
     static ScanTarget doubleTripleMagnitude(double minMagnitude, double maxMagnitude) noexcept;
+    static ScanTarget floatRange(double low, double high) noexcept;
+    static ScanTarget doubleValueRange(double low, double high) noexcept;
+    static ScanTarget doubleTripleBox(const double (&low)[3], const double (&high)[3]) noexcept;
+
+    bool usesBounds() const noexcept;  // kinds that read lo/hi (and therefore live)
 };
+
+// Copies the static bounds of `target` into `bounds` (call before attaching it as target.live).
+void initLiveBounds(const ScanTarget& target, LiveBounds& bounds) noexcept;
 
 struct ScanResult {
     std::vector<std::uintptr_t> hits;  // sorted; empty when overflow is set
@@ -53,11 +94,15 @@ struct ScanStats {
     std::size_t faults = 0;  // chunks that could not be read (freed/changed concurrently)
     unsigned threads = 0;
     double milliseconds = 0.0;
+    bool cancelled = false;
 };
 
 // Scans all scannable regions of this process (see writableRegions), excluding this module,
 // the calling thread's stack and the scanner's own buffers. One pass serves all targets.
-std::vector<ScanResult> scanProcess(const std::vector<ScanTarget>& targets, ScanStats* stats);
+// workers = 0: workerCount(). A set cancel flag stops the scan early (results are then empty).
+std::vector<ScanResult> scanProcess(const std::vector<ScanTarget>& targets, ScanStats* stats,
+                                    unsigned workers = 0,
+                                    const std::atomic<bool>* cancel = nullptr);
 
 // Same matching over caller-provided ranges (used by the self-test).
 std::vector<ScanResult> scanRanges(const std::vector<Range>& ranges,

@@ -245,7 +245,65 @@ constexpr char kAttrRpmLimit[] = "rpm.limit";      // float
 constexpr char kAttrForwardGears[] = "gears.forward";  // u32
 constexpr char kAttrCargo[] = "cargo";             // string
 constexpr char kAttrDestinationCity[] = "destination.city";  // string
+constexpr char kAttrDestinationCityId[] = "destination.city.id";        // string
+constexpr char kAttrDestinationCompanyId[] = "destination.company.id";  // string
+constexpr char kAttrSourceCityId[] = "source.city.id";                  // string
+constexpr char kAttrSourceCompanyId[] = "source.company.id";            // string
 }  // namespace config
+
+namespace gameplay {
+constexpr char kJobDelivered[] = "job.delivered";
+}  // namespace gameplay
+
+// ---- input SDK (scssdk_input*.h, input API 1.00) -------------------------------------------
+
+constexpr u32 kInputVersion_1_00 = makeVersion(1, 0);
+constexpr u32 kInputDeviceTypeSemantical = 2;  // inputs are named after game controls
+constexpr u32 kInputEventFlagFirstInFrame = 0x00000001u;
+constexpr result_t kResultNotFoundInput = -4;  // == SCS_RESULT_not_found: no more events
+
+struct InputDeviceInput {
+    string_t name;
+    string_t displayName;
+    value_type_t valueType;
+    u32 padding;
+};
+static_assert(sizeof(InputDeviceInput) == 24, "scs_input_device_input_t (x64)");
+
+struct InputEvent {
+    u32 inputIndex;
+    union {
+        u8 valueBool;
+        float valueFloat;
+        float sizing[6];
+    };
+};
+static_assert(sizeof(InputEvent) == 28, "scs_input_event_t");
+
+using input_active_callback_fn = void(E2T_SCSAPI*)(u8 active, context_t context);
+using input_event_callback_fn = result_t(E2T_SCSAPI*)(InputEvent* event, u32 flags,
+                                                      context_t context);
+
+struct InputDevice {
+    string_t name;
+    string_t displayName;
+    u32 type;
+    u32 inputCount;
+    const InputDeviceInput* inputs;
+    context_t callbackContext;
+    input_active_callback_fn inputActiveCallback;
+    input_event_callback_fn inputEventCallback;
+};
+static_assert(sizeof(InputDevice) == 56, "scs_input_device_t (x64)");
+
+using register_device_fn = result_t(E2T_SCSAPI*)(const InputDevice* device);
+
+struct InputInitParams {};  // opaque base
+struct InputInitParamsV100 : InputInitParams {
+    SdkInitParamsV100 common;
+    register_device_fn registerDevice;
+};
+static_assert(sizeof(InputInitParamsV100) == 40, "scs_input_init_params_v100_t (x64)");
 
 }  // namespace scs
 
@@ -254,4 +312,6 @@ extern "C" {
 scs::result_t E2T_SCSAPI scs_telemetry_init(scs::u32 version,
                                             const scs::TelemetryInitParams* params);
 void E2T_SCSAPI scs_telemetry_shutdown(void);
+scs::result_t E2T_SCSAPI scs_input_init(scs::u32 version, const scs::InputInitParams* params);
+void E2T_SCSAPI scs_input_shutdown(void);
 }

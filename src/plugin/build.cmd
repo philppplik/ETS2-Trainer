@@ -26,7 +26,8 @@ set LIBS=kernel32.lib user32.lib shell32.lib ole32.lib uuid.lib
 set LDFLAGS=/nologo /DEBUG /OPT:REF /OPT:ICF /INCREMENTAL:NO
 
 set COMMON=log mem_access mem_scan vector_io calibration calibration_scalar calibration_velocity ^
- calibration_velocity_verify calibration_position trainer trainer_features trainer_status plugin_telemetry
+ calibration_velocity_verify calibration_position calibration_orientation async_scan cloud_storage input_device ^
+ trainer trainer_features trainer_motion trainer_status plugin_telemetry
 set PLUGIN=plugin bridge platform_win
 set TESTS=selftest fake_game unit_tests scenario_tests velocity_tests
 

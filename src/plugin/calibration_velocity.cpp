@@ -150,6 +150,18 @@ bool VelocityCalibrator::wantsScan() const noexcept {
     return !overflowPending_ || std::fabs(speed_ - overflowSpeed_) >= kOverflowRetrySpeedDelta;
 }
 
+void VelocityCalibrator::widenScanTargets(mem::LiveBounds* bounds, std::size_t count) const {
+    constexpr std::size_t kTargetsPerScan = 2;
+    if (bounds == nullptr || count < kTargetsPerScan || !available_) {
+        return;
+    }
+    const double tolerance = scanTolerance(speed_);
+    const double low = std::max(0.0, static_cast<double>(speed_) - tolerance);
+    const double high = static_cast<double>(speed_) + tolerance;
+    bounds[0].widen(0, low, high);
+    bounds[1].widen(0, low, high);
+}
+
 void VelocityCalibrator::appendScanTargets(std::vector<mem::ScanTarget>& targets) const {
     const double tolerance = scanTolerance(speed_);
     const double low = std::max(0.0, static_cast<double>(speed_) - tolerance);
@@ -183,8 +195,13 @@ void VelocityCalibrator::onScanResults(const mem::ScanResult* results, std::size
     for (const std::uintptr_t address : results[1].hits) {
         candidates_.push_back({address, speed_, VectorEncoding::Float64x3, 0});
     }
-    mem::parallelFilter(candidates_, [](VectorCandidate& candidate) {
-        return readMagnitude(candidate, candidate.lastMagnitude);  // exact baseline
+    dropSelfReferences();
+    // Background scan: the range covered every speed seen meanwhile; keep what matches now.
+    const float tolerance = scanTolerance(speed_);
+    const float speed = speed_;
+    mem::parallelFilter(candidates_, [speed, tolerance](VectorCandidate& candidate) {
+        return readMagnitude(candidate, candidate.lastMagnitude) &&
+               std::fabs(candidate.lastMagnitude - speed) <= tolerance;
     });
     lastFilterSpeed_ = speed_;
     log::info("velocity: scan at %.2f m/s -> %zu float3 + %zu double3 candidates (%zu readable)",
@@ -228,10 +245,110 @@ void VelocityCalibrator::filterCandidates() {
     if (candidates_.empty()) {
         retry("alle Kandidaten verworfen");
     } else if (readyToVerify()) {
+        removeOverlapping();
         state_ = FeatureState::Verifying;
         testPending_ = false;
         log::info("velocity: verifying %zu candidate vectors together", candidates_.size());
     }
+}
+
+// The scan also sees the plugin's own heap. The candidate buffer is often allocated in the block of
+// the previous search, whose lastMagnitude fields held the speed during the scan; a hit on such a
+// field reads [~0, lastMagnitude, ~0] and each filter round writes the value it just read back, so
+// it would track the speed forever and stall the search. Hits inside our own buffer are dropped.
+void VelocityCalibrator::dropSelfReferences() {
+    const auto begin = reinterpret_cast<std::uintptr_t>(candidates_.data());
+    const std::uintptr_t end = begin + candidates_.capacity() * sizeof(VectorCandidate);
+    const std::size_t before = candidates_.size();
+    candidates_.erase(std::remove_if(candidates_.begin(), candidates_.end(),
+                                     [begin, end](const VectorCandidate& candidate) {
+                                         return candidate.address < end &&
+                                                candidate.address + vectorBytes(candidate.encoding) > begin;
+                                     }),
+                      candidates_.end());
+    if (candidates_.size() != before) {
+        log::info("velocity: dropped %zu hits inside the candidate list itself", before - candidates_.size());
+    }
+}
+
+// Overlapping windows of the same data (e.g. [vx vy vz] and [vy vz vx'] in a float array)
+// must never be written together: keep one per byte range, preferring stronger alignment.
+void VelocityCalibrator::removeOverlapping() {
+    const auto alignmentScore = [](std::uintptr_t address) {
+        return (address % 16 == 0) ? 2 : (address % 8 == 0) ? 1 : 0;
+    };
+    std::vector<VectorCandidate> ordered = candidates_;
+    std::sort(ordered.begin(), ordered.end(), [&](const VectorCandidate& a, const VectorCandidate& b) {
+        const int sa = alignmentScore(a.address);
+        const int sb = alignmentScore(b.address);
+        return sa != sb ? sa > sb : a.address < b.address;
+    });
+    std::vector<VectorCandidate> kept;
+    for (const VectorCandidate& candidate : ordered) {
+        const std::size_t bytes = vectorBytes(candidate.encoding);
+        const bool overlaps = std::any_of(kept.begin(), kept.end(), [&](const VectorCandidate& k) {
+            return candidate.address < k.address + vectorBytes(k.encoding) &&
+                   k.address < candidate.address + bytes;
+        });
+        if (!overlaps) {
+            kept.push_back(candidate);
+        }
+    }
+    if (kept.size() != candidates_.size()) {
+        log::info("velocity: dropped %zu overlapping candidates", candidates_.size() - kept.size());
+    }
+    candidates_ = std::move(kept);
+}
+
+bool VelocityCalibrator::isValidNow(const VectorCandidate& candidate,
+                                    double (&v)[3]) const noexcept {
+    if (candidate.mismatches != 0 || !readVector(candidate.address, candidate.encoding, v)) {
+        return false;
+    }
+    return std::fabs(lengthOf(v) - speed_) <= validateTolerance(speed_, angularSpeed_);
+}
+
+bool VelocityCalibrator::addDelta(const double (&delta)[3]) {
+    if (state_ != FeatureState::Active) {
+        return false;
+    }
+    bool written = false;
+    double firstLength = -1.0;
+    for (const VectorCandidate& candidate : confirmed_) {
+        double v[3];
+        if (!isValidNow(candidate, v)) {
+            continue;
+        }
+        for (int i = 0; i < 3; ++i) {
+            v[i] += delta[i];
+        }
+        std::uint8_t raw[kMaxVectorBytes];
+        encodeVector(v, candidate.encoding, raw);
+        if (mem::safeWrite(reinterpret_cast<void*>(candidate.address), raw,
+                           vectorBytes(candidate.encoding))) {
+            written = true;
+            if (firstLength < 0.0) {
+                firstLength = lengthOf(v);
+            }
+        }
+    }
+    if (written) {
+        effectPending_ = false;  // tricks change direction: the magnitude check does not apply
+        speed_ = static_cast<float>(firstLength);
+    }
+    return written;
+}
+
+bool VelocityCalibrator::readFirst(double (&out)[3]) const {
+    if (state_ != FeatureState::Active) {
+        return false;
+    }
+    for (const VectorCandidate& candidate : confirmed_) {
+        if (isValidNow(candidate, out)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool VelocityCalibrator::readyToVerify() const noexcept {

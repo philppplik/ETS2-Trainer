@@ -10,10 +10,11 @@ public partial class MainWindow : Window
     private readonly MainViewModel _vm;
     private readonly HotkeyService _hotkey = new();
 
-    public MainWindow()
+    /// <param name="offline">Screenshot mode: no bridge connection and no global hotkey.</param>
+    public MainWindow(bool offline = false)
     {
         InitializeComponent();
-        _vm = new MainViewModel();
+        _vm = new MainViewModel(offline);
         DataContext = _vm;
         Topmost = _vm.Settings.AlwaysOnTop;
 
@@ -21,6 +22,11 @@ public partial class MainWindow : Window
         _vm.HotkeyChanged += RegisterHotkey;
         _vm.Live.MenuHotkeyPressed += ToggleVisibility;
         _hotkey.Pressed += ToggleVisibility;
+        if (offline)
+        {
+            return;
+        }
+
         SourceInitialized += (_, _) =>
         {
             _hotkey.Attach(this);

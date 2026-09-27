@@ -10,10 +10,11 @@ public sealed class LiveViewModel : ObservableObject, IDisposable
 {
     private const float MinFactor = 1f;
     private const float MaxFactor = 10f;
-    private const double RecalibrateAllMask = 15;
+    private const double RecalibrateAllMask = 31; // fuel | wear | velocity | position | orientation
 
     private readonly BridgeClient _bridge = new();
     private readonly MainViewModel _main;
+    private readonly bool _offline;
     private TelemetrySnapshot? _telemetry;
     private StatusSnapshot? _status;
     private uint _lastMenuToggle;
@@ -27,9 +28,11 @@ public sealed class LiveViewModel : ObservableObject, IDisposable
     private bool _speedCapEnabled;
     private float _speedCapKmh;
 
-    public LiveViewModel(MainViewModel main)
+    /// <param name="offline">Screenshot mode: never connect to (and never write into) a running game.</param>
+    public LiveViewModel(MainViewModel main, bool offline = false)
     {
         _main = main;
+        _offline = offline;
         _powerFactor = Math.Clamp(main.Settings.PowerFactor, MinFactor, MaxFactor);
         _nitroAccel = main.Settings.NitroAccel;
         _speedCapKmh = main.Settings.SpeedCapKmh;
@@ -52,6 +55,31 @@ public sealed class LiveViewModel : ObservableObject, IDisposable
     public ICommand RecalibrateCommand { get; }
 
     public bool IsLive => _bridge.IsPluginAlive;
+
+    public TelemetrySnapshot? Telemetry => _telemetry;
+
+    public StatusSnapshot? Status => _status;
+
+    public bool CanWriteCloudSaves => IsLive && _status?.Capabilities.HasFlag(Capabilities.CloudSaves) == true;
+
+    public uint Send(BridgeCommand command, params double[] args) => _bridge.SendCommand(command, args);
+
+    /// <summary>Asks the plugin to write the staged save through Steam and waits for its answer.</summary>
+    public async Task<(int Code, string Message)> WriteCloudSaveAsync(TimeSpan timeout)
+    {
+        var seq = _bridge.SendCommand(BridgeCommand.WriteSaveFiles);
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(100);
+            if (_status is { } status && status.SaveWriteAck == seq)
+            {
+                return (status.SaveWriteResult, status.Message);
+            }
+        }
+
+        return (-99, "Keine Antwort vom Plugin (läuft ETS2 mit Plugin?)");
+    }
 
     public bool IsBlocked => _telemetry?.Flags.HasFlag(TelemetryFlags.TruckersMpDetected) == true;
 
@@ -155,7 +183,7 @@ public sealed class LiveViewModel : ObservableObject, IDisposable
     /// <summary>Called ~10x per second by the main timer.</summary>
     public void Tick()
     {
-        if (!_bridge.IsConnected && !_bridge.TryConnect())
+        if (_offline || (!_bridge.IsConnected && !_bridge.TryConnect()))
         {
             _telemetry = null;
             _status = null;
@@ -165,9 +193,13 @@ public sealed class LiveViewModel : ObservableObject, IDisposable
 
         _telemetry = _bridge.ReadTelemetry();
         _status = _bridge.ReadStatus();
+        var s = _main.Settings;
         _bridge.WriteControl(new ControlState(
-            InfiniteFuel, NoDamage, PowerBoost, PowerFactor, NitroEnabled, _main.Settings.NitroVk, NitroAccel,
-            SpeedCapEnabled, SpeedCapKmh, _main.Settings.MenuHotkeyVk));
+            InfiniteFuel, NoDamage, PowerBoost, PowerFactor, NitroEnabled, s.NitroVk, NitroAccel,
+            SpeedCapEnabled, SpeedCapKmh, s.MenuHotkeyVk,
+            PrepareMotion: _main.Teleport.PrepareMotion, Fun: _main.Fun.Flags,
+            MoonGravity: _main.Fun.MoonGravity, SpinTurnsPerSecond: _main.Fun.SpinSpeed,
+            JumpVk: s.JumpVk, RocketVk: s.RocketVk, RollVk: s.RollVk, HoverVk: s.HoverVk, UnflipVk: s.UnflipVk));
         DetectMenuHotkey();
         RaiseAll();
     }
